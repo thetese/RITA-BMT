@@ -55,9 +55,6 @@ contextBridge.exposeInMainWorld('api', {
   updateProduct: (product, userId) => ipcRenderer.invoke('products:update', product, userId),
   deleteProduct: (id, userId) => ipcRenderer.invoke('products:delete', id, userId),
   getLowStockItems: () => ipcRenderer.invoke('inventory:getLowStock'),
-  getWarehouses: () => ipcRenderer.invoke('inventory:getWarehouses'),
-  addWarehouse: (warehouse: any) => ipcRenderer.invoke('inventory:addWarehouse', warehouse),
-  getWarehouseStock: (id: string) => ipcRenderer.invoke('inventory:getWarehouseStock', id),
 
   // Stock Movements
   getStockMovements: () => ipcRenderer.invoke('stock:getAll'),
@@ -133,7 +130,6 @@ contextBridge.exposeInMainWorld('api', {
   // Stripe
   createStripeCheckout: (payload) => ipcRenderer.invoke('stripe:createCheckout', payload),
 
-
   // Timecards
   getTimecards: () => ipcRenderer.invoke('timecards:getAll'),
   clockIn: (userId, hourlyRate) => ipcRenderer.invoke('timecards:clockIn', userId, hourlyRate),
@@ -142,27 +138,33 @@ contextBridge.exposeInMainWorld('api', {
   // Purchase Orders - extra method
   deletePurchaseOrder: (id: any, userId: any) => ipcRenderer.invoke('po:delete', id, userId),
 
-  // Accounting
-  getAccounts: () => ipcRenderer.invoke('accounting:getAccounts'),
-  addAccount: (account: any) => ipcRenderer.invoke('accounting:addAccount', account),
-  getJournalEntries: () => ipcRenderer.invoke('accounting:getJournalEntries'),
-  addJournalEntry: (entry: any) => ipcRenderer.invoke('accounting:addJournalEntry', entry),
+  // Appointments
+  getAppointments: () => ipcRenderer.invoke('appointments:getAll'),
+  addAppointment: (apt) => ipcRenderer.invoke('appointments:add', apt),
+  updateAppointment: (apt) => ipcRenderer.invoke('appointments:update', apt),
+  deleteAppointment: (id) => ipcRenderer.invoke('appointments:delete', id),
 
-  // CRM
-  getLeads: () => ipcRenderer.invoke('crm:getLeads'),
-  addLead: (lead: any) => ipcRenderer.invoke('crm:addLead', lead),
-  updateLeadStatus: (id: string, status: string) => ipcRenderer.invoke('crm:updateLeadStatus', id, status),
-  getCrmActivities: (leadId: string) => ipcRenderer.invoke('crm:getActivities', leadId),
-  addCrmActivity: (activity: any, userId: any) => ipcRenderer.invoke('crm:addActivity', activity, userId),
-  convertLeadToCustomer: (leadId: string, userId: any) => ipcRenderer.invoke('crm:convertLead', leadId, userId),
+  // Leads
+  getLeads: () => ipcRenderer.invoke('leads:getAll'),
+  addLead: (lead) => ipcRenderer.invoke('leads:add', lead),
+  updateLead: (lead) => ipcRenderer.invoke('leads:update', lead),
+  deleteLead: (id) => ipcRenderer.invoke('leads:delete', id),
 
-  // Stock Transfers
-  getStockTransfers: () => ipcRenderer.invoke('inventory:getStockTransfers'),
-  addStockTransfer: (transfer: any, userId: any) => ipcRenderer.invoke('inventory:addStockTransfer', transfer, userId),
-  updateStockTransferStatus: (id: string, status: string, userId: any) => ipcRenderer.invoke('inventory:updateStockTransferStatus', id, status, userId),
+  // Projects
+  getProjects: () => ipcRenderer.invoke('projects:getAll'),
+  addProject: (project) => ipcRenderer.invoke('projects:add', project),
+  updateProject: (project) => ipcRenderer.invoke('projects:update', project),
+  deleteProject: (id) => ipcRenderer.invoke('projects:delete', id),
 
-  // HR Leave Requests
-  getLeaveRequests: () => ipcRenderer.invoke('hr:getLeaveRequests'),
-  addLeaveRequest: (req: any, userId: any) => ipcRenderer.invoke('hr:addLeaveRequest', req, userId),
-  updateLeaveRequestStatus: (id: string, status: string) => ipcRenderer.invoke('hr:updateLeaveRequestStatus', id, status),
+  // Tasks
+  getTasks: () => ipcRenderer.invoke('tasks:getAll'),
+  addTask: (task) => ipcRenderer.invoke('tasks:add', task),
+  updateTask: (task) => ipcRenderer.invoke('tasks:update', task),
+  deleteTask: (id) => ipcRenderer.invoke('tasks:delete', id),
+
+  // Time Entries
+  getTimeEntries: () => ipcRenderer.invoke('timeEntries:getAll'),
+  addTimeEntry: (entry) => ipcRenderer.invoke('timeEntries:add', entry),
+  updateTimeEntry: (entry) => ipcRenderer.invoke('timeEntries:update', entry),
+  deleteTimeEntry: (id) => ipcRenderer.invoke('timeEntries:delete', id),
 });

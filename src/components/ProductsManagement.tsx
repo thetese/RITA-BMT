@@ -389,11 +389,11 @@ export default function ProductsManagement({ categories = [], currentUser, busin
   return (
     <div className="products-mgmt">
       <div className="sales-form">
-        <h2>{editingId ? 'Edit Product' : 'Add New Product'}</h2>
+        <h2>{editingId ? 'Edit Item' : 'Add New Item'}</h2>
         <form onSubmit={handleSubmit}>
           <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: '15px' }}>
             <div className="form-row">
-              <label>Product Name *</label>
+              <label>{businessType === 'service' ? 'Service / Offering Name *' : 'Product Name *'}</label>
               <input name="productName" value={form.productName} onChange={handleChange} required />
             </div>
             <div className="form-row">
@@ -422,20 +422,26 @@ export default function ProductsManagement({ categories = [], currentUser, busin
               <label>Unit Price (FRW) *</label>
               <input name="unitPrice" type="text" inputMode="numeric" value={form.unitPrice} onChange={handleMoney} required />
             </div>
-            <div className="form-row">
-              <label>Cost Price (FRW)</label>
-              <input name="costPrice" type="text" inputMode="numeric" value={form.costPrice} onChange={handleMoney} />
-            </div>
+            {businessType !== 'service' && (
+              <div className="form-row">
+                <label>Cost Price (FRW)</label>
+                <input name="costPrice" type="text" inputMode="numeric" value={form.costPrice} onChange={handleMoney} />
+              </div>
+            )}
           </div>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '15px' }}>
-            <div className="form-row">
-              <label>Initial Stock</label>
-              <input name="stockQuantity" type="number" value={form.stockQuantity} onChange={handleChange} placeholder="0" />
-            </div>
-            <div className="form-row">
-              <label>Low Stock Threshold</label>
-              <input name="lowStockThreshold" type="number" value={form.lowStockThreshold} onChange={handleChange} placeholder="5" />
-            </div>
+          <div style={{ display: 'grid', gridTemplateColumns: businessType === 'service' ? '1fr' : '1fr 1fr 1fr', gap: '15px' }}>
+            {businessType !== 'service' && (
+              <>
+                <div className="form-row">
+                  <label>Initial Stock</label>
+                  <input name="stockQuantity" type="number" value={form.stockQuantity} onChange={handleChange} placeholder="0" />
+                </div>
+                <div className="form-row">
+                  <label>Low Stock Threshold</label>
+                  <input name="lowStockThreshold" type="number" value={form.lowStockThreshold} onChange={handleChange} placeholder="5" />
+                </div>
+              </>
+            )}
             <div className="form-row">
               <label>RRA Tax Category</label>
               <select name="taxTyCd" value={form.taxTyCd} onChange={handleChange} required>
@@ -520,12 +526,12 @@ export default function ProductsManagement({ categories = [], currentUser, busin
             <thead>
               <tr>
                 <th>Category</th>
-                <th>Product Name</th>
+                <th>{businessType === 'service' ? 'Service Name' : 'Product Name'}</th>
                 <th>Unit Price</th>
-                <th>Cost Price</th>
+                {businessType !== 'service' && <th>Cost Price</th>}
                 <th>Tax Cat</th>
-                <th>In Stock</th>
-                <th>Alert Threshold</th>
+                {businessType !== 'service' && <th>In Stock</th>}
+                {businessType !== 'service' && <th>Alert Threshold</th>}
                 <th>Actions</th>
               </tr>
             </thead>
@@ -535,16 +541,18 @@ export default function ProductsManagement({ categories = [], currentUser, busin
                   <td><span className="badge">{p.category}</span></td>
                   <td style={{ fontWeight: 500 }}>{p.productName}</td>
                   <td>{p.unitPrice.toLocaleString()} FRW</td>
-                  <td>{p.costPrice.toLocaleString()} FRW</td>
+                  {businessType !== 'service' && <td>{p.costPrice.toLocaleString()} FRW</td>}
                   <td>{p.taxTyCd === 'A' ? 'A (0%)' : 'B (18%)'}</td>
-                  <td>
-                    {p.stockQuantity > 0 ? (
-                      p.stockQuantity <= (p.lowStockThreshold || 5) ? <span className="warning">{p.stockQuantity}</span> : <span className="interest">{p.stockQuantity}</span>
-                    ) : (
-                      <span className="btn-danger" style={{ padding: '2px 6px', borderRadius: '4px', fontSize: '0.85em' }}>Out of Stock</span>
-                    )}
-                  </td>
-                  <td>{p.lowStockThreshold || 5}</td>
+                  {businessType !== 'service' && (
+                    <td>
+                      {p.stockQuantity > 0 ? (
+                        p.stockQuantity <= (p.lowStockThreshold || 5) ? <span className="warning">{p.stockQuantity}</span> : <span className="interest">{p.stockQuantity}</span>
+                      ) : (
+                        <span className="btn-danger" style={{ padding: '2px 6px', borderRadius: '4px', fontSize: '0.85em' }}>Out of Stock</span>
+                      )}
+                    </td>
+                  )}
+                  {businessType !== 'service' && <td>{p.lowStockThreshold || 5}</td>}
                   <td className="actions">
                     {businessType === 'restaurant' && (
                       <button className="btn-sm btn-secondary" onClick={() => openRecipeModal(p)}>Recipe</button>
@@ -552,7 +560,9 @@ export default function ProductsManagement({ categories = [], currentUser, busin
                     {businessType !== 'restaurant' && (
                       <button className="btn-sm btn-secondary" onClick={() => setPrintingProduct(p)}>Label</button>
                     )}
-                    <button className="btn-sm" onClick={() => setAdjustingProduct(p)}>Adjust</button>
+                    {businessType !== 'service' && (
+                      <button className="btn-sm" onClick={() => setAdjustingProduct(p)}>Adjust</button>
+                    )}
                     <button className="btn-sm" onClick={() => handleEdit(p)}>Edit</button>
                     {currentUser?.role === 'Admin' && (
                       <button className="btn-sm btn-danger" onClick={() => handleDelete(p.id)}>Del</button>

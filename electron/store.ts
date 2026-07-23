@@ -18,7 +18,25 @@ class Store {
     if (dbPath) {
       this.dbPath = dbPath;
     } else {
-      this.dbPath = path.join(app.getPath('userData'), 'sales.db');
+      const fs = require('fs');
+      const isPackaged = app.isPackaged;
+      const baseDir = isPackaged ? path.dirname(app.getPath('exe')) : app.getAppPath();
+      
+      const appType = process.env.VITE_APP_TYPE || 'retail';
+      const dbFilename = `sales_${appType}.db`;
+      
+      this.dbPath = path.join(baseDir, dbFilename);
+      
+      const oldDbPath = path.join(app.getPath('userData'), dbFilename);
+      // If the database doesn't exist in the new app folder yet, but exists in the old AppData folder, copy it over
+      if (!fs.existsSync(this.dbPath) && fs.existsSync(oldDbPath)) {
+        try {
+          fs.copyFileSync(oldDbPath, this.dbPath);
+          console.log('Migrated database to app folder.');
+        } catch (err) {
+          console.error('Could not migrate old database:', err);
+        }
+      }
     }
     
     this.db = new Database(this.dbPath);

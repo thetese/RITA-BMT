@@ -11,6 +11,10 @@ export default function InvoiceMaker() {
 
   const [invoices, setInvoices] = useState([]);
   const [products, setProducts] = useState([]);
+  const [projects, setProjects] = useState([]);
+  const [unbilledTime, setUnbilledTime] = useState([]);
+  const [unbilledExpenses, setUnbilledExpenses] = useState([]);
+  const [selectedProjectId, setSelectedProjectId] = useState('');
   const [editingId, setEditingId] = useState(null);
   const [businessInfo, setBusinessInfo] = useState({ name: 'RITA SALES', address: 'Business Address Here', phone: 'Tel: +250 780 000 000' });
   
@@ -38,6 +42,19 @@ export default function InvoiceMaker() {
     
     const prodData = await window.api.getProducts();
     setProducts(prodData || []);
+
+    if (window.api.getProjects) {
+      const projs = await window.api.getProjects();
+      setProjects(projs || []);
+    }
+    if (window.api.getTimeEntries) {
+      const time = await window.api.getTimeEntries();
+      setUnbilledTime((time || []).filter(t => t.status !== 'Billed' && t.billable === 1));
+    }
+    if (window.api.getExpenses) {
+      const exp = await window.api.getExpenses();
+      setUnbilledExpenses((exp || []).filter(e => e.status !== 'Billed'));
+    }
 
     const name = await window.api.getSetting('businessName');
     const address = await window.api.getSetting('businessAddress');
@@ -90,6 +107,51 @@ export default function InvoiceMaker() {
     return { subtotal, tax, total };
   };
 
+  const pullUnbilledFromProject = () => {
+    if (!selectedProjectId) {
+      showToast('Please select a project first', 'error');
+      return;
+    }
+    
+    const proj = projects.find(p => p.id === selectedProjectId);
+    if (proj && !form.customerName) {
+      setForm(prev => ({ ...prev, customerName: proj.clientName }));
+    }
+
+    const timeLogs = unbilledTime.filter(t => t.projectId === selectedProjectId);
+    const exps = unbilledExpenses.filter(e => e.projectId === selectedProjectId);
+
+    const newItems = [];
+    
+    // For time logs, we need an hourly rate. Since we don't store it on time log directly right now,
+    // we'll default to 50,000 FRW/hr or similar, and let the user edit it.
+    timeLogs.forEach(t => {
+      newItems.push({
+        description: `Service Hours: ${t.description} (${t.date})`,
+        quantity: t.hours,
+        unitPrice: 50000, // Default hourly rate placeholder
+        _timeId: t.id
+      });
+    });
+
+    exps.forEach(e => {
+      newItems.push({
+        description: `Expense: ${e.category} - ${e.notes}`,
+        quantity: 1,
+        unitPrice: e.amount,
+        _expId: e.id
+      });
+    });
+
+    if (newItems.length === 0) {
+      showToast('No unbilled items found for this project.', 'error');
+      return;
+    }
+
+    setForm(prev => ({ ...prev, items: [...prev.items, ...newItems] }));
+    showToast(`Pulled ${newItems.length} unbilled items!`, 'success');
+  };
+
   const handleSaveInvoice = async () => {
     if (!form.customerName) {
       showToast('Customer Name is required', 'error');
@@ -121,6 +183,21 @@ export default function InvoiceMaker() {
 
     if (saved) {
       showToast(editingId ? 'Invoice updated' : 'Invoice saved successfully', 'success');
+      
+      // Mark time/expenses as billed
+      if (!editingId && form.items.length > 0) {
+        form.items.forEach(async (item) => {
+          if (item._timeId) {
+            const t = unbilledTime.find(x => x.id === item._timeId);
+            if (t) await window.api.updateTimeEntry({ ...t, status: 'Billed' });
+          }
+          if (item._expId) {
+            const e = unbilledExpenses.find(x => x.id === item._expId);
+            if (e) await window.api.updateExpense({ ...e, status: 'Billed' }, null);
+          }
+        });
+      }
+
       setForm({ customerName: '', customerAddress: '', items: [], taxRate: 18 });
       setEditingId(null);
       loadData();
@@ -250,6 +327,19 @@ export default function InvoiceMaker() {
           <label>Customer Address</label>
           <input type="text" value={form.customerAddress} onChange={e => setForm({...form, customerAddress: e.target.value})} placeholder="Address, City, etc." />
         </div>
+
+        {projects.length > 0 && (
+          <div style={{ background: 'var(--bg-secondary)', padding: '15px', borderRadius: '8px', marginBottom: '20px', border: '1px dashed var(--primary)' }}>
+            <h3 style={{ marginTop: 0, fontSize: '1rem' }}>Auto-Bill Project</h3>
+            <div style={{ display: 'flex', gap: '10px' }}>
+              <select value={selectedProjectId} onChange={e => setSelectedProjectId(e.target.value)} style={{ flex: 1 }}>
+                <option value="">-- Select Project --</option>
+                {projects.map(p => <option key={p.id} value={p.id}>{p.name} ({p.clientName})</option>)}
+              </select>
+              <button className="btn-secondary" onClick={pullUnbilledFromProject}>Pull Unbilled Time & Expenses</button>
+            </div>
+          </div>
+        )}
 
         <div style={{ background: 'var(--bg-color)', padding: '15px', borderRadius: '8px', marginBottom: '20px' }}>
           <h3>Add Line Item</h3>

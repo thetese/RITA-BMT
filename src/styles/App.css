@@ -3,14 +3,14 @@
   --text-primary: #0f172a;
   --text-secondary: #64748b;
   --card-bg: #ffffff;
-  --header-bg: linear-gradient(135deg, #1e1b4b, #312e81, #4338ca);
+  --header-bg: linear-gradient(135deg, #022c22, #064e3b, #047857);
   --border-color: #e2e8f0;
   --input-bg: #ffffff;
   --hover-bg: #f1f5f9;
   
-  --primary: #4f46e5;
-  --primary-hover: #4338ca;
-  --primary-gradient: linear-gradient(135deg, #6366f1, #4f46e5);
+  --primary: #059669;
+  --primary-hover: #047857;
+  --primary-gradient: linear-gradient(135deg, #10b981, #059669);
   --success: #10b981;
   --danger: #ef4444;
   --danger-hover: #fef2f2;
@@ -35,14 +35,14 @@ body.dark {
   --text-primary: #f8fafc;
   --text-secondary: #94a3b8;
   --card-bg: #1e293b;
-  --header-bg: linear-gradient(135deg, #020617, #0f172a, #1e293b);
+  --header-bg: linear-gradient(135deg, #020617, #022c22, #064e3b);
   --border-color: #334155;
   --input-bg: #1e293b;
   --hover-bg: #334155;
   
-  --primary: #6366f1;
-  --primary-hover: #818cf8;
-  --primary-gradient: linear-gradient(135deg, #818cf8, #6366f1);
+  --primary: #10b981;
+  --primary-hover: #34d399;
+  --primary-gradient: linear-gradient(135deg, #34d399, #10b981);
   --success: #10b981;
   --danger: #ef4444;
   --danger-hover: #7f1d1d;
@@ -165,8 +165,10 @@ body {
 }
 
 .nav-btn:hover { 
-  background: rgba(255,255,255,0.1); 
+  background: rgba(255,255,255,0.25); 
   color: #fff; 
+  transform: translateX(4px);
+  box-shadow: 0 2px 8px rgba(0,0,0,0.1);
 }
 
 .nav-btn.active { 

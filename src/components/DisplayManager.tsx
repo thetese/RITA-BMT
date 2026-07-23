@@ -75,7 +75,7 @@ export default function DisplayManager() {
                 <option value="none">-- Not Used --</option>
                 <option value="dashboard">Dashboard (Main UI)</option>
                 <option value="pos">Point of Sale</option>
-                <option value="kitchen">Kitchen Display</option>
+                {import.meta.env.VITE_APP_TYPE === 'restaurant' && <option value="kitchen">Kitchen Display</option>}
               </select>
               
               <div style={{ display: 'flex', alignItems: 'center', gap: '8px', minWidth: '130px', opacity: currentAssignment !== 'none' ? 1 : 0.5 }}>

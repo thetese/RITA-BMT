@@ -60,9 +60,6 @@ export const registerSalesControllers = (ipcMain: IpcMain, store: any) => {
   ipcMain.handle('products:update', (_, product, userId) => store.updateProduct(product, userId));
   ipcMain.handle('products:delete', (_, id, userId) => store.deleteProduct(id, userId));
   ipcMain.handle('inventory:getLowStock', () => store.getLowStockItems());
-  ipcMain.handle('inventory:getWarehouses', () => store.getWarehouses());
-  ipcMain.handle('inventory:addWarehouse', (_, warehouse) => store.addWarehouse(warehouse));
-  ipcMain.handle('inventory:getWarehouseStock', (_, id) => store.getWarehouseStock(id));
 
   // Stock Movements
   ipcMain.handle('stock:getAll', () => store.getStockMovements());
@@ -94,30 +91,35 @@ export const registerSalesControllers = (ipcMain: IpcMain, store: any) => {
   // Purchase Orders
   ipcMain.handle('purchaseOrders:getAll', () => store.getPurchaseOrders());
   ipcMain.handle('purchaseOrders:add', (_, po, userId) => store.addPurchaseOrder(po, userId));
-  ipcMain.handle('purchaseOrders:updateStatus', (_, id, status, userId) => store.updatePurchaseOrderStatus(id, status, userId));
   ipcMain.handle('purchaseOrders:delete', (_, id, userId) => store.deletePurchaseOrder(id, userId));
 
-  // Accounting
-  ipcMain.handle('accounting:getAccounts', () => store.getAccounts());
-  ipcMain.handle('accounting:addAccount', (_, account) => store.addAccount(account));
-  ipcMain.handle('accounting:getJournalEntries', () => store.getJournalEntries());
-  ipcMain.handle('accounting:addJournalEntry', (_, entry) => store.addJournalEntry(entry));
+  // Appointments
+  ipcMain.handle('appointments:getAll', () => store.getAppointments());
+  ipcMain.handle('appointments:add', (_, apt) => store.addAppointment(apt));
+  ipcMain.handle('appointments:update', (_, apt) => store.updateAppointment(apt));
+  ipcMain.handle('appointments:delete', (_, id) => store.deleteAppointment(id));
 
-  // CRM
-  ipcMain.handle('crm:getLeads', () => store.getLeads());
-  ipcMain.handle('crm:addLead', (_, lead) => store.addLead(lead));
-  ipcMain.handle('crm:updateLeadStatus', (_, id, status) => store.updateLeadStatus(id, status));
-  ipcMain.handle('crm:getActivities', (_, leadId) => store.getCrmActivities(leadId));
-  ipcMain.handle('crm:addActivity', (_, activity, userId) => store.addCrmActivity(activity, userId));
-  ipcMain.handle('crm:convertLead', (_, leadId, userId) => store.convertLeadToCustomer(leadId, userId));
+  // Leads
+  ipcMain.handle('leads:getAll', () => store.getLeads());
+  ipcMain.handle('leads:add', (_, lead) => store.addLead(lead));
+  ipcMain.handle('leads:update', (_, lead) => store.updateLead(lead));
+  ipcMain.handle('leads:delete', (_, id) => store.deleteLead(id));
 
-  // Stock Transfers
-  ipcMain.handle('inventory:getStockTransfers', () => store.getStockTransfers());
-  ipcMain.handle('inventory:addStockTransfer', (_, transfer, userId) => store.addStockTransfer(transfer, userId));
-  ipcMain.handle('inventory:updateStockTransferStatus', (_, id, status, userId) => store.updateStockTransferStatus(id, status, userId));
+  // Projects
+  ipcMain.handle('projects:getAll', () => store.getProjects());
+  ipcMain.handle('projects:add', (_, project) => store.addProject(project));
+  ipcMain.handle('projects:update', (_, project) => store.updateProject(project));
+  ipcMain.handle('projects:delete', (_, id) => store.deleteProject(id));
 
-  // HR
-  ipcMain.handle('hr:getLeaveRequests', () => store.getLeaveRequests());
-  ipcMain.handle('hr:addLeaveRequest', (_, req, userId) => store.addLeaveRequest(req, userId));
-  ipcMain.handle('hr:updateLeaveRequestStatus', (_, id, status) => store.updateLeaveRequestStatus(id, status));
+  // Tasks
+  ipcMain.handle('tasks:getAll', () => store.getTasks());
+  ipcMain.handle('tasks:add', (_, task) => store.addTask(task));
+  ipcMain.handle('tasks:update', (_, task) => store.updateTask(task));
+  ipcMain.handle('tasks:delete', (_, id) => store.deleteTask(id));
+
+  // Time Entries
+  ipcMain.handle('timeEntries:getAll', () => store.getTimeEntries());
+  ipcMain.handle('timeEntries:add', (_, entry) => store.addTimeEntry(entry));
+  ipcMain.handle('timeEntries:update', (_, entry) => store.updateTimeEntry(entry));
+  ipcMain.handle('timeEntries:delete', (_, id) => store.deleteTimeEntry(id));
 };

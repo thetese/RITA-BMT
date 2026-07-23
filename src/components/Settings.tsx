@@ -5,13 +5,12 @@ import { useConfirm } from './ui/Confirm';
 import { useToast } from './ui/Toast';
 import DisplayManager from './DisplayManager';
 
-export default function Settings({ theme, toggleTheme, setBusinessType: setAppBusinessType }) {
+export default function Settings({ theme, toggleTheme }) {
   const { askConfirm } = useConfirm();
   const { showToast } = useToast();
   const [message, setMessage] = useState('');
   const [printers, setPrinters] = useState([]);
   const [selectedPrinter, setSelectedPrinter] = useState('');
-  const [businessType, setBusinessType] = useState('restaurant');
   
   const [companyDetails, setCompanyDetails] = useState({
     tin: '',
@@ -28,9 +27,6 @@ export default function Settings({ theme, toggleTheme, setBusinessType: setAppBu
           setPrinters(prts);
           const savedPrinter = await window.api.getSetting('receiptPrinter');
           if (savedPrinter) setSelectedPrinter(savedPrinter);
-          
-          const savedBusType = await window.api.getSetting('businessType');
-          if (savedBusType) setBusinessType(savedBusType);
           
           const tin = await window.api.getSetting('tin') || '';
           const businessName = await window.api.getSetting('businessName') || '';
@@ -63,14 +59,7 @@ export default function Settings({ theme, toggleTheme, setBusinessType: setAppBu
     setTimeout(() => setMessage(''), 2000);
   };
 
-  const handleBusinessTypeChange = (e) => {
-    const t = e.target.value;
-    setBusinessType(t);
-    if (window.api) window.api.setSetting('businessType', t);
-    if (setAppBusinessType) setAppBusinessType(t);
-    setMessage('Business Type saved');
-    setTimeout(() => setMessage(''), 3000);
-  };
+
 
   const handleBackup = async () => {
     setMessage('Backing up...');
@@ -116,16 +105,7 @@ export default function Settings({ theme, toggleTheme, setBusinessType: setAppBu
         </button>
       </div>
 
-      <hr style={{ border: 'none', borderTop: '1px solid var(--border-color)', margin: '20px 0' }} />
 
-      <div style={{ marginBottom: '30px' }}>
-        <h3>Business Type</h3>
-        <p style={{ color: 'var(--text-secondary)', marginBottom: '12px' }}>This changes the available UI tools. Restaurants get raw ingredient tracking, while retail shops do not.</p>
-        <select value={businessType} onChange={handleBusinessTypeChange} style={{ padding: '8px', borderRadius: '4px', border: '1px solid var(--border-color)', width: '100%' }}>
-          <option value="restaurant">Restaurant / Cafe</option>
-          <option value="retail">Retail Shop / Supermarket</option>
-        </select>
-      </div>
 
       <hr style={{ border: 'none', borderTop: '1px solid var(--border-color)', margin: '20px 0' }} />
 

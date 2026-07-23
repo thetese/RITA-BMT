@@ -4,7 +4,8 @@ export default function usePOSCart(products) {
   const [cart, setCart] = useState([]);
 
   const addToCart = (product, priceOverride = null) => {
-    if (product.stockQuantity <= 0 && !priceOverride) return; 
+    const isService = import.meta.env.VITE_APP_TYPE === 'service';
+    if (!isService && product.stockQuantity <= 0 && !priceOverride) return; 
     
     setCart(prev => {
       const unitPriceToUse = priceOverride !== null ? priceOverride : product.unitPrice;
@@ -12,7 +13,7 @@ export default function usePOSCart(products) {
       
       const existing = prev.find(item => item.productId === product.id && item.unitPrice === unitPriceToUse);
       if (existing && priceOverride === null) {
-        if (existing.quantity >= product.stockQuantity) {
+        if (!isService && existing.quantity >= product.stockQuantity) {
           return prev;
         }
         return prev.map(item => 
@@ -40,12 +41,13 @@ export default function usePOSCart(products) {
   };
 
   const updateQuantity = (productId, delta) => {
+    const isService = import.meta.env.VITE_APP_TYPE === 'service';
     setCart(prev => {
       return prev.map(item => {
         if (item.productId === productId) {
           const newQ = item.quantity + delta;
           const product = products.find(p => p.id === productId);
-          if (product && newQ > product.stockQuantity) {
+          if (!isService && product && newQ > product.stockQuantity) {
             return item; 
           }
           return { ...item, quantity: newQ > 0 ? newQ : 0 };

@@ -5,22 +5,27 @@ const defaultExpense = {
   category: '',
   amount: '',
   date: new Date().toISOString().split('T')[0],
-  notes: ''
+  notes: '',
+  projectId: '',
+  status: 'Unbilled'
 };
 
 export default function Expenses({ currentUser }) {
   const { askConfirm } = useConfirm();
   const [expenses, setExpenses] = useState([]);
+  const [projects, setProjects] = useState([]);
   const [form, setForm] = useState(defaultExpense);
   const [editingId, setEditingId] = useState(null);
 
-  const loadExpenses = async () => {
+  const loadData = async () => {
     if (!window.api) return;
     const data = await window.api.getExpenses();
-    setExpenses(data);
+    setExpenses(data || []);
+    const projs = await window.api.getProjects();
+    setProjects(projs || []);
   };
 
-  useEffect(() => { loadExpenses(); }, []);
+  useEffect(() => { loadData(); }, []);
 
   const formatMoney = (val) => {
     if (val === null || val === undefined || val === '') return '';
@@ -54,7 +59,7 @@ export default function Expenses({ currentUser }) {
       }
       setForm(defaultExpense);
       setEditingId(null);
-      loadExpenses();
+      loadData();
     } catch (err) {
       console.error(err);
     }
@@ -71,7 +76,7 @@ export default function Expenses({ currentUser }) {
   const handleDelete = async (id) => {
     if (await askConfirm('Delete this expense?')) {
       await window.api.deleteExpense(id, currentUser.id);
-      loadExpenses();
+      loadData();
     }
   };
 
@@ -95,6 +100,13 @@ export default function Expenses({ currentUser }) {
             <input name="amount" type="text" inputMode="numeric" value={form.amount} onChange={handleMoney} required />
           </div>
           <div className="form-row">
+            <label>Link to Project (Optional)</label>
+            <select name="projectId" value={form.projectId || ''} onChange={handleChange}>
+              <option value="">None (General Business Expense)</option>
+              {projects.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+            </select>
+          </div>
+          <div className="form-row">
             <label>Notes</label>
             <input name="notes" value={form.notes} onChange={handleChange} placeholder="Optional details..." />
           </div>
@@ -116,26 +128,42 @@ export default function Expenses({ currentUser }) {
               <tr>
                 <th>Date</th>
                 <th>Category</th>
-                <th>Notes</th>
+                <th>Project / Notes</th>
                 <th>Amount</th>
+                <th>Status</th>
                 <th>Actions</th>
               </tr>
             </thead>
             <tbody>
-              {expenses.map(e => (
-                <tr key={e.id}>
-                  <td>{e.date}</td>
-                  <td><span className="badge">{e.category}</span></td>
-                  <td>{e.notes}</td>
-                  <td className="warning">{e.amount.toLocaleString()} FRW</td>
-                  <td className="actions">
-                    <button className="btn-sm" onClick={() => handleEdit(e)}>Edit</button>
-                    {currentUser.role === 'Admin' && (
-                      <button className="btn-sm btn-danger" onClick={() => handleDelete(e.id)}>Del</button>
-                    )}
-                  </td>
-                </tr>
-              ))}
+              {expenses.map(e => {
+                const proj = projects.find(p => p.id === e.projectId);
+                return (
+                  <tr key={e.id}>
+                    <td>{e.date}</td>
+                    <td><span className="badge">{e.category}</span></td>
+                    <td>
+                      {proj && <div style={{ fontWeight: 'bold', fontSize: '0.85rem' }}>{proj.name}</div>}
+                      <div style={{ fontSize: '0.85rem' }}>{e.notes}</div>
+                    </td>
+                    <td className="warning">{e.amount.toLocaleString()} FRW</td>
+                    <td>
+                      {e.projectId ? (
+                        <span className="badge" style={{ background: e.status === 'Billed' ? 'var(--success)' : 'var(--warning)', color: '#fff' }}>
+                          {e.status || 'Unbilled'}
+                        </span>
+                      ) : (
+                        <span style={{ color: 'var(--text-secondary)', fontSize: '0.85rem' }}>Internal</span>
+                      )}
+                    </td>
+                    <td className="actions">
+                      <button className="btn-sm" onClick={() => handleEdit(e)} disabled={e.status === 'Billed'}>Edit</button>
+                      {currentUser.role === 'Admin' && (
+                        <button className="btn-sm btn-danger" onClick={() => handleDelete(e.id)} disabled={e.status === 'Billed'}>Del</button>
+                      )}
+                    </td>
+                  </tr>
+                );
+              })}
               {expenses.length === 0 && (
                 <tr><td colSpan={5} className="empty">No expenses logged yet.</td></tr>
               )}

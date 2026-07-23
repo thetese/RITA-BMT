@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { ChefHat, CheckCircle2, AlertTriangle } from 'lucide-react';
 
@@ -39,7 +38,7 @@ export default function FoodReadyAlerts() {
         beep();
         const interval = setInterval(beep, 1000);
         if (ctx.state === 'suspended') { ctx.resume(); }
-        setTimeout(() => { if (ctx.state === 'suspended' && (window as any).showToast) { (window as any).showToast('🔔 Alarm Blocked! Please interact with the page to allow sounds.', 'warning'); } }, 500);
+        setTimeout(() => { if (ctx.state === 'suspended' && window.showToast) { window.showToast('🔔 Alarm Blocked! Please interact with the page to allow sounds.', 'warning'); } }, 500);
         return () => { clearInterval(interval); if (ctx.state !== 'closed') ctx.close(); };
       } catch (err) { return () => {}; }
     };
@@ -244,5 +243,3 @@ export default function FoodReadyAlerts() {
     </div>
   );
 }
-
-

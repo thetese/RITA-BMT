@@ -94,6 +94,18 @@ module.exports = {
   },
 
   // Users
+  requireAdmin(userId) {
+    const adminCount = this.db.prepare("SELECT COUNT(*) as count FROM users WHERE role = 'Admin'").get().count;
+    if (adminCount === 0) return true; // Allow first admin creation
+    
+    if (!userId) throw new Error("Unauthorized");
+    const user = this.db.prepare("SELECT * FROM users WHERE id = ?").get(userId);
+    if (!user || user.role !== 'Admin') {
+      throw new Error("Admin privileges required");
+    }
+    return true;
+  },
+
   getUsers() {
     return this.db.prepare('SELECT id, username, role, createdAt FROM users').all();
   },
@@ -296,24 +308,6 @@ module.exports = {
       
       if (customerId && totalEarnedPoints > 0) {
         this.db.prepare('UPDATE customers SET points = COALESCE(points, 0) + ? WHERE id=?').run(totalEarnedPoints, customerId);
-      }
-      
-      const totalSale = items.reduce((sum: number, item: any) => sum + item.totalPrice, 0);
-      const totalCost = items.reduce((sum: number, item: any) => sum + (item.costPrice || 0) * item.quantity, 0);
-
-      if (totalSale > 0) {
-        try {
-          const entryId = crypto.randomUUID();
-          this.db.prepare('INSERT INTO journal_entries (id, date, description, referenceId, createdAt) VALUES (?, ?, ?, ?, datetime("now"))')
-            .run(entryId, date || new Date().toISOString(), 'POS Sale', 'SALE-' + Date.now());
-          const insertLine = this.db.prepare('INSERT INTO journal_lines (id, entryId, accountId, debit, credit) VALUES (?, ?, ?, ?, ?)');
-          insertLine.run(crypto.randomUUID(), entryId, 'acc-1000', totalSale, 0);
-          insertLine.run(crypto.randomUUID(), entryId, 'acc-4000', 0, totalSale);
-          insertLine.run(crypto.randomUUID(), entryId, 'acc-5000', totalCost, 0);
-          insertLine.run(crypto.randomUUID(), entryId, 'acc-1200', 0, totalCost);
-        } catch (e) {
-          console.error('Failed to post journal entry for sale:', e);
-        }
       }
       
       return results;
@@ -630,17 +624,17 @@ module.exports = {
   
   addExpense(expense, userId) {
     const id = crypto.randomUUID();
-    const stmt = this.db.prepare("INSERT INTO expenses (id, category, amount, date, notes, createdAt) VALUES (?, ?, ?, ?, ?, datetime('now'))");
-    stmt.run(id, expense.category, expense.amount, expense.date, expense.notes || '');
+    const stmt = this.db.prepare("INSERT INTO expenses (id, category, amount, date, notes, projectId, status, createdAt) VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now'))");
+    stmt.run(id, expense.category, expense.amount, expense.date, expense.notes || '', expense.projectId || null, expense.status || 'Unbilled');
     this.logAudit(userId, 'EXPENSE_ADDED', `Added expense ${id} for ${expense.amount}`);
-    const newExpense = { ...expense, id };
+    const newExpense = { ...expense, id, projectId: expense.projectId || null, status: expense.status || 'Unbilled' };
     this.addSyncJob('expenses:upsert', newExpense);
     return newExpense;
   },
   
   updateExpense(expense, userId) {
-    const stmt = this.db.prepare('UPDATE expenses SET category=?, amount=?, date=?, notes=? WHERE id=?');
-    const info = stmt.run(expense.category, expense.amount, expense.date, expense.notes || '', expense.id);
+    const stmt = this.db.prepare('UPDATE expenses SET category=?, amount=?, date=?, notes=?, projectId=?, status=? WHERE id=?');
+    const info = stmt.run(expense.category, expense.amount, expense.date, expense.notes || '', expense.projectId || null, expense.status || 'Unbilled', expense.id);
     if (info.changes > 0) {
       this.logAudit(userId, 'EXPENSE_UPDATED', `Updated expense ${expense.id}`);
       this.addSyncJob('expenses:upsert', expense);
@@ -763,6 +757,196 @@ module.exports = {
     return stmt.all(limit);
   },
 
+  // --- Projects ---
+  getProjects() {
+    return this.db.prepare('SELECT * FROM projects ORDER BY createdAt DESC').all();
+  },
+
+  addProject(project) {
+    const id = crypto.randomUUID();
+    const stmt = this.db.prepare(`
+      INSERT INTO projects (id, name, clientName, status, startDate, deadline, budget, description, managerId, createdAt)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
+    `);
+    stmt.run(id, project.name, project.clientName, project.status || 'Active', project.startDate || null, project.deadline || null, project.budget || 0, project.description || '', project.managerId || null);
+    const created = this.db.prepare('SELECT * FROM projects WHERE id=?').get(id);
+    this.addSyncJob('projects:upsert', created);
+    return created;
+  },
+
+  updateProject(project) {
+    const stmt = this.db.prepare(`
+      UPDATE projects SET name=?, clientName=?, status=?, startDate=?, deadline=?, budget=?, description=?, managerId=?, updatedAt=datetime('now') WHERE id=?
+    `);
+    const info = stmt.run(project.name, project.clientName, project.status || 'Active', project.startDate || null, project.deadline || null, project.budget || 0, project.description || '', project.managerId || null, project.id);
+    if (info.changes > 0) {
+      const updated = this.db.prepare('SELECT * FROM projects WHERE id=?').get(project.id);
+      this.addSyncJob('projects:upsert', updated);
+    }
+    return info.changes > 0;
+  },
+
+  deleteProject(id) {
+    const stmt = this.db.prepare('DELETE FROM projects WHERE id = ?');
+    const info = stmt.run(id);
+    if (info.changes > 0) {
+      this.addSyncJob('projects:delete', { id });
+    }
+    return info.changes > 0;
+  },
+
+  // --- Tasks ---
+  getTasks() {
+    return this.db.prepare('SELECT * FROM tasks ORDER BY createdAt DESC').all();
+  },
+
+  addTask(task) {
+    const id = crypto.randomUUID();
+    const stmt = this.db.prepare(`
+      INSERT INTO tasks (id, projectId, title, description, status, priority, assignedTo, dueDate, createdAt)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
+    `);
+    stmt.run(id, task.projectId, task.title, task.description || '', task.status || 'To Do', task.priority || 'Medium', task.assignedTo || null, task.dueDate || null);
+    const created = this.db.prepare('SELECT * FROM tasks WHERE id=?').get(id);
+    this.addSyncJob('tasks:upsert', created);
+    return created;
+  },
+
+  updateTask(task) {
+    const stmt = this.db.prepare(`
+      UPDATE tasks SET projectId=?, title=?, description=?, status=?, priority=?, assignedTo=?, dueDate=?, updatedAt=datetime('now') WHERE id=?
+    `);
+    const info = stmt.run(task.projectId, task.title, task.description || '', task.status || 'To Do', task.priority || 'Medium', task.assignedTo || null, task.dueDate || null, task.id);
+    if (info.changes > 0) {
+      const updated = this.db.prepare('SELECT * FROM tasks WHERE id=?').get(task.id);
+      this.addSyncJob('tasks:upsert', updated);
+    }
+    return info.changes > 0;
+  },
+
+  deleteTask(id) {
+    const stmt = this.db.prepare('DELETE FROM tasks WHERE id = ?');
+    const info = stmt.run(id);
+    if (info.changes > 0) {
+      this.addSyncJob('tasks:delete', { id });
+    }
+    return info.changes > 0;
+  },
+
+  // --- Time Entries ---
+  getTimeEntries() {
+    return this.db.prepare('SELECT * FROM time_entries ORDER BY date DESC, createdAt DESC').all();
+  },
+
+  addTimeEntry(entry) {
+    const id = crypto.randomUUID();
+    const stmt = this.db.prepare(`
+      INSERT INTO time_entries (id, projectId, userId, description, hours, billable, status, date, createdAt)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
+    `);
+    stmt.run(id, entry.projectId || null, entry.userId, entry.description || '', entry.hours || 0, entry.billable !== undefined ? entry.billable : 1, entry.status || 'Unbilled', entry.date);
+    const created = this.db.prepare('SELECT * FROM time_entries WHERE id=?').get(id);
+    this.addSyncJob('time_entries:upsert', created);
+    return created;
+  },
+
+  updateTimeEntry(entry) {
+    const stmt = this.db.prepare(`
+      UPDATE time_entries SET projectId=?, userId=?, description=?, hours=?, billable=?, status=?, date=?, updatedAt=datetime('now') WHERE id=?
+    `);
+    const info = stmt.run(entry.projectId || null, entry.userId, entry.description || '', entry.hours || 0, entry.billable !== undefined ? entry.billable : 1, entry.status || 'Unbilled', entry.date, entry.id);
+    if (info.changes > 0) {
+      const updated = this.db.prepare('SELECT * FROM time_entries WHERE id=?').get(entry.id);
+      this.addSyncJob('time_entries:upsert', updated);
+    }
+    return info.changes > 0;
+  },
+
+  deleteTimeEntry(id) {
+    const stmt = this.db.prepare('DELETE FROM time_entries WHERE id = ?');
+    const info = stmt.run(id);
+    if (info.changes > 0) {
+      this.addSyncJob('time_entries:delete', { id });
+    }
+    return info.changes > 0;
+  },
+
+  // --- CRM Leads ---
+  getLeads() {
+    return this.db.prepare('SELECT * FROM leads ORDER BY createdAt DESC').all();
+  },
+
+  addLead(lead) {
+    const id = crypto.randomUUID();
+    const stmt = this.db.prepare(`
+      INSERT INTO leads (id, customerName, contactInfo, projectDescription, estimatedValue, stage, assignedTo, notes, createdAt)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
+    `);
+    stmt.run(id, lead.customerName, lead.contactInfo || '', lead.projectDescription || '', lead.estimatedValue || 0, lead.stage || 'New', lead.assignedTo || null, lead.notes || '');
+    const created = this.db.prepare('SELECT * FROM leads WHERE id=?').get(id);
+    this.addSyncJob('leads:upsert', created);
+    return created;
+  },
+
+  updateLead(lead) {
+    const stmt = this.db.prepare(`
+      UPDATE leads SET customerName=?, contactInfo=?, projectDescription=?, estimatedValue=?, stage=?, assignedTo=?, notes=?, updatedAt=datetime('now') WHERE id=?
+    `);
+    const info = stmt.run(lead.customerName, lead.contactInfo || '', lead.projectDescription || '', lead.estimatedValue || 0, lead.stage || 'New', lead.assignedTo || null, lead.notes || '', lead.id);
+    if (info.changes > 0) {
+      const updated = this.db.prepare('SELECT * FROM leads WHERE id=?').get(lead.id);
+      this.addSyncJob('leads:upsert', updated);
+    }
+    return info.changes > 0;
+  },
+
+  deleteLead(id) {
+    const stmt = this.db.prepare('DELETE FROM leads WHERE id = ?');
+    const info = stmt.run(id);
+    if (info.changes > 0) {
+      this.addSyncJob('leads:delete', { id });
+    }
+    return info.changes > 0;
+  },
+
+  // --- Appointments ---
+  getAppointments() {
+    return this.db.prepare('SELECT * FROM appointments ORDER BY appointmentDate ASC, startTime ASC').all();
+  },
+
+  addAppointment(apt) {
+    const id = crypto.randomUUID();
+    const stmt = this.db.prepare(`
+      INSERT INTO appointments (id, customerName, customerPhone, serviceId, serviceName, providerId, providerName, appointmentDate, startTime, duration, status, notes, createdAt)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
+    `);
+    stmt.run(id, apt.customerName, apt.customerPhone || '', apt.serviceId, apt.serviceName, apt.providerId, apt.providerName, apt.appointmentDate, apt.startTime, apt.duration || 60, apt.status || 'Scheduled', apt.notes || '');
+    const created = this.db.prepare('SELECT * FROM appointments WHERE id=?').get(id);
+    this.addSyncJob('appointments:upsert', created);
+    return created;
+  },
+
+  updateAppointment(apt) {
+    const stmt = this.db.prepare(`
+      UPDATE appointments SET customerName=?, customerPhone=?, serviceId=?, serviceName=?, providerId=?, providerName=?, appointmentDate=?, startTime=?, duration=?, status=?, notes=?, updatedAt=datetime('now') WHERE id=?
+    `);
+    const info = stmt.run(apt.customerName, apt.customerPhone || '', apt.serviceId, apt.serviceName, apt.providerId, apt.providerName, apt.appointmentDate, apt.startTime, apt.duration || 60, apt.status || 'Scheduled', apt.notes || '', apt.id);
+    if (info.changes > 0) {
+      const updated = this.db.prepare('SELECT * FROM appointments WHERE id=?').get(apt.id);
+      this.addSyncJob('appointments:upsert', updated);
+    }
+    return info.changes > 0;
+  },
+
+  deleteAppointment(id) {
+    const stmt = this.db.prepare('DELETE FROM appointments WHERE id = ?');
+    const info = stmt.run(id);
+    if (info.changes > 0) {
+      this.addSyncJob('appointments:delete', { id });
+    }
+    return info.changes > 0;
+  },
+
   // --- Timecards ---
   getTimecards() {
     return this.db.prepare('SELECT * FROM timecards ORDER BY createdAt DESC').all();
@@ -790,132 +974,6 @@ module.exports = {
   updateUserRates(userId, hourlyRate, commissionRate) {
     const stmt = this.db.prepare('UPDATE users SET hourlyRate = ?, commissionRate = ? WHERE id = ?');
     stmt.run(hourlyRate, commissionRate, userId);
-    return true;
-  },
-
-  // --- ACCOUNTING ---
-  getAccounts() {
-    return this.db.prepare('SELECT * FROM accounts ORDER BY code ASC').all();
-  },
-  addAccount(account: any) {
-    const stmt = this.db.prepare('INSERT INTO accounts (id, code, name, type) VALUES (?, ?, ?, ?)');
-    stmt.run(account.id || require('crypto').randomUUID(), account.code, account.name, account.type);
-    return true;
-  },
-  getJournalEntries() {
-    const entries = this.db.prepare('SELECT * FROM journal_entries ORDER BY date DESC').all();
-    const lines = this.db.prepare('SELECT * FROM journal_lines').all();
-    return entries.map(e => ({
-      ...e,
-      lines: lines.filter(l => l.entryId === e.id)
-    }));
-  },
-  addJournalEntry(entry: any) {
-    const entryId = require('crypto').randomUUID();
-    this.db.transaction(() => {
-      this.db.prepare('INSERT INTO journal_entries (id, date, description, referenceId, createdAt) VALUES (?, ?, ?, ?, datetime("now"))')
-        .run(entryId, entry.date, entry.description, entry.referenceId || '');
-      const insertLine = this.db.prepare('INSERT INTO journal_lines (id, entryId, accountId, debit, credit) VALUES (?, ?, ?, ?, ?)');
-      for (const line of entry.lines) {
-        insertLine.run(require('crypto').randomUUID(), entryId, line.accountId, line.debit || 0, line.credit || 0);
-      }
-    })();
-    return { ...entry, id: entryId };
-  },
-
-  // --- CRM ---
-  getLeads() {
-    return this.db.prepare('SELECT * FROM crm_leads ORDER BY createdAt DESC').all();
-  },
-  addLead(lead: any) {
-    const id = require('crypto').randomUUID();
-    this.db.prepare('INSERT INTO crm_leads (id, name, company, email, phone, status, expectedValue, notes, createdAt) VALUES (?, ?, ?, ?, ?, ?, ?, ?, datetime("now"))')
-      .run(id, lead.name, lead.company || '', lead.email || '', lead.phone || '', lead.status || 'NEW', lead.expectedValue || 0, lead.notes || '');
-    return { ...lead, id };
-  },
-  updateLeadStatus(id: string, status: string) {
-    this.db.prepare('UPDATE crm_leads SET status = ? WHERE id = ?').run(status, id);
-    return true;
-  },
-  getCrmActivities(leadId: string) {
-    return this.db.prepare('SELECT * FROM crm_activities WHERE leadId = ? ORDER BY date DESC').all(leadId);
-  },
-  addCrmActivity(activity: any, userId: any) {
-    const id = require('crypto').randomUUID();
-    const dateStr = activity.date || new Date().toISOString();
-    this.db.prepare('INSERT INTO crm_activities (id, leadId, type, description, date, userId, createdAt) VALUES (?, ?, ?, ?, ?, ?, datetime("now"))')
-      .run(id, activity.leadId, activity.type, activity.description, dateStr, userId || null);
-    return { ...activity, id, date: dateStr };
-  },
-  convertLeadToCustomer(leadId: string, userId: any) {
-    const lead = this.db.prepare('SELECT * FROM crm_leads WHERE id = ?').get(leadId);
-    if (!lead) throw new Error('Lead not found');
-    this.db.transaction(() => {
-      const customerId = require('crypto').randomUUID();
-      this.db.prepare('INSERT INTO customers (id, name, phone, email, address, totalSpent, points, createdAt) VALUES (?, ?, ?, ?, ?, 0, 0, datetime("now"))')
-        .run(customerId, lead.company || lead.name, lead.phone || '', lead.email || '', '');
-      this.db.prepare('UPDATE crm_leads SET status = "WON", notes = COALESCE(notes, "") || "\nConverted to Customer." WHERE id = ?').run(leadId);
-      this.db.prepare('INSERT INTO crm_activities (id, leadId, type, description, date, userId, createdAt) VALUES (?, ?, "SYSTEM", "Converted to active Customer.", datetime("now"), ?, datetime("now"))')
-        .run(require('crypto').randomUUID(), leadId, userId || null);
-    })();
-    return true;
-  },
-
-  // --- HR & PAYROLL ---
-  getSalesForPayroll(startDate: string, endDate: string) {
-    return this.db.prepare('SELECT s.*, u.username as employeeName, u.commissionRate FROM sales s JOIN users u ON u.id = s.userId WHERE s.date >= ? AND s.date <= ? AND s.status = "COMPLETED"').all(startDate, endDate);
-  },
-  getLeaveRequests() {
-    return this.db.prepare('SELECT lr.*, u.username as employeeName FROM hr_leave_requests lr JOIN users u ON u.id = lr.userId ORDER BY lr.createdAt DESC').all();
-  },
-  addLeaveRequest(req: any, userId: any) {
-    const id = require('crypto').randomUUID();
-    this.db.prepare('INSERT INTO hr_leave_requests (id, userId, type, startDate, endDate, status, notes, createdAt) VALUES (?, ?, ?, ?, ?, "PENDING", ?, datetime("now"))')
-      .run(id, req.userId, req.type, req.startDate, req.endDate, req.notes || '');
-    return { ...req, id };
-  },
-  updateLeaveRequestStatus(id: string, status: string) {
-    const info = this.db.prepare('UPDATE hr_leave_requests SET status = ? WHERE id = ?').run(status, id);
-    return info.changes > 0;
-  },
-
-  // --- WAREHOUSES ---
-  getWarehouses() {
-    return this.db.prepare('SELECT * FROM warehouses ORDER BY name ASC').all();
-  },
-  addWarehouse(warehouse: any) {
-    const id = require('crypto').randomUUID();
-    this.db.prepare('INSERT INTO warehouses (id, name, location, createdAt) VALUES (?, ?, ?, datetime("now"))').run(id, warehouse.name, warehouse.location || '');
-    return { ...warehouse, id };
-  },
-  getWarehouseStock(warehouseId: string) {
-    return this.db.prepare('SELECT * FROM warehouse_stock WHERE warehouseId = ?').all(warehouseId);
-  },
-  getStockTransfers() {
-    return this.db.prepare('SELECT * FROM stock_transfers ORDER BY createdAt DESC').all();
-  },
-  addStockTransfer(transfer: any, userId: any) {
-    const id = require('crypto').randomUUID();
-    this.db.prepare('INSERT INTO stock_transfers (id, sourceWarehouseId, destWarehouseId, productId, quantity, status, notes, createdBy, createdAt) VALUES (?, ?, ?, ?, ?, "PENDING", ?, ?, datetime("now"))')
-      .run(id, transfer.sourceWarehouseId, transfer.destWarehouseId, transfer.productId, transfer.quantity, transfer.notes || '', userId || null);
-    return { ...transfer, id, status: 'PENDING' };
-  },
-  updateStockTransferStatus(id: string, status: string, userId: any) {
-    this.db.transaction(() => {
-      this.db.prepare('UPDATE stock_transfers SET status = ? WHERE id = ?').run(status, id);
-      if (status === 'RECEIVED') {
-        const transfer = this.db.prepare('SELECT * FROM stock_transfers WHERE id = ?').get(id);
-        if (transfer) {
-          this.db.prepare('UPDATE warehouse_stock SET quantity = quantity - ? WHERE warehouseId = ? AND productId = ?').run(transfer.quantity, transfer.sourceWarehouseId, transfer.productId);
-          const destStock = this.db.prepare('SELECT * FROM warehouse_stock WHERE warehouseId = ? AND productId = ?').get(transfer.destWarehouseId, transfer.productId);
-          if (destStock) {
-            this.db.prepare('UPDATE warehouse_stock SET quantity = quantity + ? WHERE warehouseId = ? AND productId = ?').run(transfer.quantity, transfer.destWarehouseId, transfer.productId);
-          } else {
-            this.db.prepare('INSERT INTO warehouse_stock (id, warehouseId, productId, quantity) VALUES (?, ?, ?, ?)').run(require('crypto').randomUUID(), transfer.destWarehouseId, transfer.productId, transfer.quantity);
-          }
-        }
-      }
-    })();
     return true;
   }
 };
