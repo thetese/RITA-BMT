@@ -1,0 +1,15 @@
+{
+  "id": "rita-plugin-restaurant",
+  "name": "Restaurant POS",
+  "description": "Core module for Restaurant POS",
+  "version": "1.0.0",
+  "entryFile": "plugin.js",
+  "roles": [
+    "Admin",
+    "Waiter",
+    "Manager"
+  ],
+  "icon": "Utensils",
+  "iconBg": "#f97316",
+  "gradient": "linear-gradient(180deg, #311105 0%, #7c2d12 50%, #ea580c 100%)"
+}

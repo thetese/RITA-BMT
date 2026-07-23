@@ -7,13 +7,12 @@ import {
 import '../styles/App.css';
 import { v4 as uuidv4 } from 'uuid';
 import { generateThermalReceiptHTML, generateProformaHTML } from '../utils/receiptGenerator';
-import { vsdcApi } from '../utils/vsdcMock';
+import { vsdcApi } from '../utils/vsdcClient';
 import ShiftManager from './ShiftManager';
 import POSLayout from './ui/POSLayout';
 import Modal from './ui/Modal';
 import { useToast } from './ui/Toast';
 import { useConfirm } from './ui/Confirm';
-import useBarcodeScanner from '../hooks/useBarcodeScanner';
 import usePOSCart from '../hooks/usePOSCart';
 import useHeldCarts from '../hooks/useHeldCarts';
 import { buildVSDCPayload } from '../utils/vsdc';
@@ -21,7 +20,7 @@ import { formatMoney } from '../utils/format';
 import CartItem from './ui/CartItem';
 import { printReceiptHTML } from '../utils/printer';
 
-export default function RetailPOS({ currentUser, categories = [], sales = [], onSave }) {
+export default function ServicePOS({ currentUser, categories = [], sales = [], onSave }) {
   const { showToast } = useToast();
   const { askConfirm } = useConfirm();
   
@@ -47,9 +46,6 @@ export default function RetailPOS({ currentUser, categories = [], sales = [], on
   const { cart, setCart, addToCart, updateQuantity, updateDiscount, calculateItemDiscount, totalAmount, clearCart } = usePOSCart(products);
   const { heldCarts, activeOrderId, activeOrderName, loadHeldCarts, saveHeldCart, restoreCart, deleteHeldCart, clearActiveOrder } = useHeldCarts(window.api);
   
-  // Enable barcode scanner
-  useBarcodeScanner(products, addToCart, true, (msg) => showToast(msg, 'error'));
-
   const loadData = async () => {
     if (!window.api) return;
     const data = await window.api.getProducts();
@@ -155,7 +151,7 @@ export default function RetailPOS({ currentUser, categories = [], sales = [], on
 
   const handleStripeCheckout = async () => {
     try {
-      const res = await window.api.createStripeCheckout({ amount: finalTotalAmount, description: 'Retail POS Sale' });
+      const res = await window.api.createStripeCheckout({ amount: finalTotalAmount, description: 'Service CRM Sale' });
       if (res.success && res.url) {
         window.open(res.url, 'Stripe Checkout', 'width=500,height=700');
         setPaymentDetails({ Cash: 0, Card: finalTotalAmount, Momo: 0, Credit: 0 });

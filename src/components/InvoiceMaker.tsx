@@ -5,7 +5,7 @@ import autoTable from 'jspdf-autotable';
 import { useToast } from './ui/Toast';
 import { useConfirm } from './ui/Confirm';
 
-export default function InvoiceMaker() {
+export default function InvoiceMaker({ currentUser }) {
   const { showToast } = useToast();
   const { askConfirm } = useConfirm();
 
@@ -123,13 +123,11 @@ export default function InvoiceMaker() {
 
     const newItems = [];
     
-    // For time logs, we need an hourly rate. Since we don't store it on time log directly right now,
-    // we'll default to 50,000 FRW/hr or similar, and let the user edit it.
     timeLogs.forEach(t => {
       newItems.push({
         description: `Service Hours: ${t.description} (${t.date})`,
         quantity: t.hours,
-        unitPrice: 50000, // Default hourly rate placeholder
+        unitPrice: currentUser?.hourlyRate || 50000, 
         _timeId: t.id
       });
     });

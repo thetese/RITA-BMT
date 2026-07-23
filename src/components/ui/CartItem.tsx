@@ -9,7 +9,7 @@ const statusTone: Record<string, 'neutral' | 'success' | 'warning'> = {
   pending: 'neutral'
 };
 
-const CartItem = React.memo(({ item, dcAmt, onUpdateQuantity, onUpdateDiscount }: any) => {
+const CartItem = React.memo(({ item, dcAmt, onUpdateQuantity, onSetQuantity, onUpdateDiscount }: any) => {
   return (
     <div className="pos-cart-item">
       <div className="pos-cart-item-main">
@@ -28,7 +28,14 @@ const CartItem = React.memo(({ item, dcAmt, onUpdateQuantity, onUpdateDiscount }
           <button type="button" onClick={() => onUpdateQuantity(item.productId, -1)} className="pos-qty-btn" aria-label="Decrease quantity">
             <Minus size={16} />
           </button>
-          <span>{item.quantity}</span>
+          <input 
+            type="number" 
+            step="0.01" 
+            value={item.quantity} 
+            onChange={(e) => onSetQuantity && onSetQuantity(item.productId, e.target.value)} 
+            style={{ width: '50px', textAlign: 'center', border: 'none', background: 'transparent', fontWeight: 'bold' }} 
+          />
+          {item.unit && item.unit !== 'Pcs' && <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', marginLeft: '2px' }}>{item.unit}</span>}
           <button type="button" onClick={() => onUpdateQuantity(item.productId, 1)} className="pos-qty-btn plus" aria-label="Increase quantity">
             <Plus size={16} />
           </button>

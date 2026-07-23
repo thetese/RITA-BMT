@@ -144,7 +144,7 @@ export default function Projects({ setPage, setSelectedProjectId }) {
             ))}
             {projects.length === 0 && (
               <tr>
-                <td colSpan="6" style={{ textAlign: 'center', padding: '30px' }}>No projects found. Create one from a won quote!</td>
+                <td colSpan={6} style={{ textAlign: 'center', padding: '30px' }}>No projects found. Create one from a won quote!</td>
               </tr>
             )}
           </tbody>
@@ -166,7 +166,7 @@ export default function Projects({ setPage, setSelectedProjectId }) {
               </div>
               <div className="form-group">
                 <label>Description</label>
-                <textarea rows="2" value={formData.description} onChange={e => setFormData({...formData, description: e.target.value})}></textarea>
+                <textarea rows={2} value={formData.description} onChange={e => setFormData({...formData, description: e.target.value})}></textarea>
               </div>
               <div style={{ display: 'flex', gap: '15px' }}>
                 <div className="form-group" style={{ flex: 1 }}>

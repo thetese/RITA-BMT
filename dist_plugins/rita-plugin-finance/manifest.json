@@ -1,0 +1,13 @@
+{
+  "id": "rita-plugin-finance",
+  "name": "Finance",
+  "description": "Core module for Finance",
+  "version": "1.0.0",
+  "entryFile": "plugin.js",
+  "roles": [
+    "Admin"
+  ],
+  "icon": "Landmark",
+  "iconBg": "#14b8a6",
+  "gradient": "linear-gradient(180deg, #042f2e 0%, #115e59 50%, #0d9488 100%)"
+}

@@ -17,12 +17,13 @@ export const useSalesStore = create<SalesState>((set) => ({
   setSales: (sales) => set({ sales }),
   setAccounters: (accounters) => set({ accounters }),
   setLowStockItems: (lowStockItems) => set({ lowStockItems }),
-  loadAllData: async () => {
+  loadAllData: async (storeId?: string) => {
     const api = (window as any).api;
     if (!api) return;
     try {
+      const actualStoreId = storeId || localStorage.getItem('currentStoreId') || 'ALL';
       const [sales, accounters, lowStock] = await Promise.all([
-        api.getSales(),
+        api.getSales(actualStoreId),
         api.getAccounters(),
         api.getLowStockItems()
       ]);

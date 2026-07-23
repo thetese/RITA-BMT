@@ -65,6 +65,7 @@
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.110.0",
+    "adm-zip": "^0.6.0",
     "assert-plus": "^1.0.0",
     "bcryptjs": "^3.0.3",
     "better-sqlite3": "^12.11.1",
@@ -82,6 +83,7 @@
     "jspdf-autotable": "^5.0.8",
     "lucide-react": "^1.23.0",
     "node-cron": "^4.6.0",
+    "qrcode": "^1.5.4",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
     "recharts": "^2.10.0",

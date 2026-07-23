@@ -1,0 +1,15 @@
+{
+  "id": "rita-plugin-projects",
+  "name": "Projects & Tasks",
+  "description": "Core module for Projects & Tasks",
+  "version": "1.0.0",
+  "entryFile": "plugin.js",
+  "roles": [
+    "Admin",
+    "Manager",
+    "Staff"
+  ],
+  "icon": "FolderKanban",
+  "iconBg": "#8b5cf6",
+  "gradient": "linear-gradient(180deg, #2e1065 0%, #581c87 50%, #7c3aed 100%)"
+}

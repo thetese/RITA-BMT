@@ -1,0 +1,13 @@
+{
+  "id": "rita-plugin-inventory",
+  "name": "Inventory",
+  "description": "Track stock, products and suppliers",
+  "version": "1.0.0",
+  "icon": "PackageSearch",
+  "iconBg": "#f59e0b",
+  "gradient": "linear-gradient(180deg, #451a03 0%, #78350f 50%, #d97706 100%)",
+  "roles": [
+    "Admin"
+  ],
+  "entryFile": "dist/plugin.js"
+}

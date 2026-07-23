@@ -1,0 +1,15 @@
+{
+  "id": "rita-plugin-retail",
+  "name": "Retail POS",
+  "description": "Core module for Retail POS",
+  "version": "1.0.0",
+  "entryFile": "plugin.js",
+  "roles": [
+    "Admin",
+    "Cashier",
+    "Manager"
+  ],
+  "icon": "ShoppingCart",
+  "iconBg": "#3b82f6",
+  "gradient": "linear-gradient(180deg, #0f172a 0%, #1e3a8a 50%, #2563eb 100%)"
+}

@@ -183,7 +183,7 @@ export default function CRM() {
               </div>
               <div className="form-group">
                 <label>Project / Request Description</label>
-                <textarea rows="3" value={formData.projectDescription} onChange={e => setFormData({...formData, projectDescription: e.target.value})}></textarea>
+                <textarea rows={3} value={formData.projectDescription} onChange={e => setFormData({...formData, projectDescription: e.target.value})}></textarea>
               </div>
               <div style={{ display: 'flex', gap: '15px' }}>
                 <div className="form-group" style={{ flex: 1 }}>
@@ -199,7 +199,7 @@ export default function CRM() {
               </div>
               <div className="form-group">
                 <label>Internal Notes</label>
-                <textarea rows="2" value={formData.notes} onChange={e => setFormData({...formData, notes: e.target.value})}></textarea>
+                <textarea rows={2} value={formData.notes} onChange={e => setFormData({...formData, notes: e.target.value})}></textarea>
               </div>
               <div className="form-actions">
                 <button type="button" className="btn-secondary" onClick={() => setIsModalOpen(false)}>Cancel</button>

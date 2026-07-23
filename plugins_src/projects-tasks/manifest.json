@@ -1,0 +1,15 @@
+{
+  "id": "rita-plugin-projects",
+  "name": "Projects & Tasks",
+  "description": "Plan, assign and track projects efficiently",
+  "version": "1.0.0",
+  "icon": "Briefcase",
+  "iconBg": "#8b5cf6",
+  "gradient": "linear-gradient(180deg, #2e1065 0%, #581c87 50%, #7c3aed 100%)",
+  "roles": [
+    "Admin",
+    "Worker",
+    "Sales"
+  ],
+  "entryFile": "dist/plugin.js"
+}

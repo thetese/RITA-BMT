@@ -1,0 +1,14 @@
+{
+  "id": "rita-plugin-service",
+  "name": "Service CRM",
+  "description": "Core module for Service CRM",
+  "version": "1.0.0",
+  "entryFile": "plugin.js",
+  "roles": [
+    "Admin",
+    "Manager"
+  ],
+  "icon": "Users",
+  "iconBg": "#10b981",
+  "gradient": "linear-gradient(180deg, #022c22 0%, #065f46 50%, #059669 100%)"
+}

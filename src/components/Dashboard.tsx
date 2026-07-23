@@ -66,6 +66,16 @@ export default function Dashboard({ sales, filter, setFilter, categories, lowSto
   const lowStockProducts = lowStockItems.filter(p => p.stockQuantity > 0);
   const outOfStockProducts = lowStockItems.filter(p => p.stockQuantity <= 0);
 
+  const todayDateObj = new Date();
+  const nextWeekObj = new Date();
+  nextWeekObj.setDate(todayDateObj.getDate() + 7);
+
+  const expiringProducts = products.filter(p => {
+    if (!p.expirationDate || p.stockQuantity <= 0) return false;
+    const expDate = new Date(p.expirationDate);
+    return expDate <= nextWeekObj;
+  });
+
   const targetProgress = Math.min((totalSales / monthlyTarget) * 100, 100) || 0;
   const radialData = [
     { name: 'Goal', value: 100, fill: 'var(--hover-bg)' },
@@ -187,6 +197,14 @@ export default function Dashboard({ sales, filter, setFilter, categories, lowSto
       {/* ══════════════ TODAY TAB ══════════════ */}
       {activeTab === 'today' && (
         <>
+          {expiringProducts.length > 0 && (
+            <div className="card" style={{ borderLeft: '4px solid var(--danger)', backgroundColor: 'var(--danger-hover)', padding: '15px 20px', marginBottom: '20px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: 'var(--danger)', fontWeight: 'bold' }}>
+                <AlertTriangle size={20} /> Warning: You have {expiringProducts.length} product(s) expiring within the next 7 days!
+              </div>
+              <button className="btn-secondary btn-sm" onClick={() => setActiveTab('inventory')} style={{ margin: 0 }}>View Details</button>
+            </div>
+          )}
           <div className="filter-bar">
             <input type="date" value={filter.startDate} onChange={e => setFilter({ ...filter, startDate: e.target.value })} />
             <input type="date" value={filter.endDate} onChange={e => setFilter({ ...filter, endDate: e.target.value })} />
@@ -313,7 +331,7 @@ export default function Dashboard({ sales, filter, setFilter, categories, lowSto
       {/* ══════════════ INVENTORY RISKS TAB ══════════════ */}
       {activeTab === 'inventory' && (
         <>
-          {(lowStockProducts.length > 0 || outOfStockProducts.length > 0) ? (
+          {(lowStockProducts.length > 0 || outOfStockProducts.length > 0 || expiringProducts.length > 0) ? (
             <div className="card" style={{ borderLeft: '4px solid var(--danger)', backgroundColor: 'var(--danger-hover)' }}>
               <h3 style={{ color: 'var(--danger)', display: 'flex', alignItems: 'center', gap: '8px', margin: '0 0 10px 0' }}>
                 <AlertTriangle size={20} /> Inventory Alerts
@@ -332,6 +350,22 @@ export default function Dashboard({ sales, filter, setFilter, categories, lowSto
                     <strong>Low Stock Warnings:</strong>
                     <ul style={{ marginLeft: '20px', fontSize: '0.9rem', color: 'var(--text-primary)' }}>
                       {lowStockProducts.map(p => <li key={p.id}>{p.name} <span style={{fontSize: '0.8em', color: 'gray'}}>({p.type})</span> - {p.stockQuantity} left (Threshold: {p.lowStockThreshold})</li>)}
+                    </ul>
+                  </div>
+                )}
+                {expiringProducts.length > 0 && (
+                  <div>
+                    <strong>Expiring Soon / Expired:</strong>
+                    <ul style={{ marginLeft: '20px', fontSize: '0.9rem', color: 'var(--text-primary)' }}>
+                      {expiringProducts.map(p => {
+                        const isExpired = new Date(p.expirationDate) < new Date();
+                        return (
+                          <li key={p.id}>
+                            {p.productName} <span style={{fontSize: '0.8em', color: 'gray'}}>({p.stockQuantity} left)</span> - Exp: {new Date(p.expirationDate).toLocaleDateString()}
+                            {isExpired && <span style={{ color: 'red', marginLeft: '5px', fontWeight: 'bold' }}>(EXPIRED)</span>}
+                          </li>
+                        );
+                      })}
                     </ul>
                   </div>
                 )}

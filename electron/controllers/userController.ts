@@ -2,19 +2,20 @@ import { IpcMain } from 'electron';
 
 export const registerUserControllers = (ipcMain: IpcMain, store: any) => {
   // Waiters
-  ipcMain.handle('waiters:getAll', () => store.getWaiters());
+  ipcMain.handle('waiters:getAll', (_, storeId) => store.getWaiters(storeId));
   ipcMain.handle('waiters:add', (_, waiter) => store.addWaiter(waiter));
   ipcMain.handle('waiters:update', (_, waiter) => store.updateWaiter(waiter));
   ipcMain.handle('waiters:delete', (_, id) => store.deleteWaiter(id));
 
   // Users
-  ipcMain.handle('users:getAll', () => store.getUsers());
+  ipcMain.handle('users:getAll', (_, storeId) => store.getUsers(storeId));
   ipcMain.handle('users:getByUsername', (_, username) => store.getUserByUsername(username));
   ipcMain.handle('users:login', (_, creds) => store.verifyLogin(creds.username, creds.password));
   ipcMain.handle('users:add', (_, user, callerId) => { store.requireAdmin(callerId); return store.addUser(user); });
   ipcMain.handle('users:update', (_, user, callerId) => { store.requireAdmin(callerId); return store.updateUser(user); });
   ipcMain.handle('users:delete', (_, id, currentUserId) => { store.requireAdmin(currentUserId); return store.deleteUser(id, currentUserId); });
   ipcMain.handle('users:updateRates', (_, userId, hourlyRate, commissionRate, callerId) => { store.requireAdmin(callerId); return store.updateUserRates(userId, hourlyRate, commissionRate); });
+  ipcMain.handle('users:resetPassword', (_, username, newPassword, recoveryCode) => store.resetPasswordWithRecoveryCode(username, newPassword, recoveryCode));
 
   // Accounters
   ipcMain.handle('accounters:getAll', () => store.getAccounters());
@@ -37,7 +38,7 @@ export const registerUserControllers = (ipcMain: IpcMain, store: any) => {
   ipcMain.handle('suppliers:delete', (_, id, userId) => store.deleteSupplier(id, userId));
 
   // Tables
-  ipcMain.handle('tables:getAll', () => store.getTables());
+  ipcMain.handle('tables:getAll', (_, storeId) => store.getTables(storeId));
   ipcMain.handle('tables:add', (_, table, userId) => store.addTable(table, userId));
   ipcMain.handle('tables:update', (_, table, userId) => store.updateTable(table, userId));
   ipcMain.handle('tables:delete', (_, id, userId) => store.deleteTable(id, userId));
@@ -49,7 +50,10 @@ export const registerUserControllers = (ipcMain: IpcMain, store: any) => {
   ipcMain.handle('shifts:getExpectedCash', (_, shiftId) => store.getExpectedCash(shiftId));
 
   // Timecards
-  ipcMain.handle('timecards:getAll', () => store.getTimecards());
+  ipcMain.handle('timecards:getAll', (_, storeId) => store.getTimecards(storeId));
   ipcMain.handle('timecards:clockIn', (_, userId, hourlyRate) => store.clockIn(userId, hourlyRate));
   ipcMain.handle('timecards:clockOut', (_, id) => store.clockOut(id));
+  ipcMain.handle('timecards:add', (_, timecard, callerId) => { store.requireAdmin(callerId); return store.addTimecard(timecard); });
+  ipcMain.handle('timecards:update', (_, timecard, callerId) => { store.requireAdmin(callerId); return store.updateTimecard(timecard); });
+  ipcMain.handle('timecards:delete', (_, id, callerId) => { store.requireAdmin(callerId); return store.deleteTimecard(id); });
 };

@@ -1,0 +1,13 @@
+{
+  "id": "rita-plugin-hr",
+  "name": "People & HR",
+  "description": "Manage employees, attendance and payroll",
+  "version": "1.0.0",
+  "icon": "Users",
+  "iconBg": "#ec4899",
+  "gradient": "linear-gradient(180deg, #4c0519 0%, #881337 50%, #db2777 100%)",
+  "roles": [
+    "Admin"
+  ],
+  "entryFile": "dist/plugin.js"
+}

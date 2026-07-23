@@ -12,6 +12,7 @@ export default function Reports({ sales, filter, setFilter, categories, lowStock
   const [expenses, setExpenses] = useState([]);
   const [timecards, setTimecards] = useState([]);
   const [users, setUsers] = useState([]);
+  const [invoices, setInvoices] = useState([]);
 
   useEffect(() => {
     if (window.api) {
@@ -26,34 +27,54 @@ export default function Reports({ sales, filter, setFilter, categories, lowStock
       
       window.api.getTimecards().then(data => setTimecards(data));
       window.api.getUsers().then(data => setUsers(data));
+      if (window.api.getInvoices) {
+        window.api.getInvoices().then(data => {
+          const filteredInv = data.filter(i => {
+            const dateStr = i.createdAt.slice(0, 10);
+            const matchDate = (!filter.startDate || dateStr >= filter.startDate) &&
+                              (!filter.endDate || dateStr <= filter.endDate);
+            const matchCategory = !filter.category || filter.category === 'Service';
+            return matchDate && matchCategory;
+          });
+          setInvoices(filteredInv);
+        });
+      }
     }
   }, [filter]);
 
   const totalSales = sales.reduce((sum, s) => sum + s.totalPrice, 0);
+  const invoiceRevenue = invoices.filter(i => i.status === 'PAID').reduce((sum, i) => sum + (i.total || 0), 0);
+  const totalRevenue = totalSales + invoiceRevenue;
   const totalCost = sales.reduce((sum, s) => sum + (s.costPrice || 0) * s.quantity, 0);
-  const totalGrossProfit = totalSales - totalCost;
+  const totalGrossProfit = totalSales - totalCost + invoiceRevenue;
   const totalExpenses = expenses.reduce((sum, e) => sum + e.amount, 0);
   const netProfit = totalGrossProfit - totalExpenses;
-  const marginRate = totalSales > 0 ? ((netProfit / totalSales) * 100).toFixed(1) : 0;
+  const marginRate = totalRevenue > 0 ? ((netProfit / totalRevenue) * 100).toFixed(1) : 0;
 
   const monthlyMap = {};
   sales.forEach(s => {
     const month = s.date.slice(0, 7);
-    if (!monthlyMap[month]) monthlyMap[month] = { sales: 0, cost: 0, gross: 0, expenses: 0 };
+    if (!monthlyMap[month]) monthlyMap[month] = { sales: 0, invoice: 0, cost: 0, gross: 0, expenses: 0 };
     monthlyMap[month].sales += s.totalPrice;
     monthlyMap[month].cost += (s.costPrice || 0) * s.quantity;
     monthlyMap[month].gross += s.totalPrice - (s.costPrice || 0) * s.quantity;
   });
+  invoices.filter(i => i.status === 'PAID').forEach(i => {
+    const month = i.createdAt.slice(0, 7);
+    if (!monthlyMap[month]) monthlyMap[month] = { sales: 0, invoice: 0, cost: 0, gross: 0, expenses: 0 };
+    monthlyMap[month].invoice += (i.total || 0);
+    monthlyMap[month].gross += (i.total || 0);
+  });
   expenses.forEach(e => {
     const month = e.date.slice(0, 7);
-    if (!monthlyMap[month]) monthlyMap[month] = { sales: 0, cost: 0, gross: 0, expenses: 0 };
+    if (!monthlyMap[month]) monthlyMap[month] = { sales: 0, invoice: 0, cost: 0, gross: 0, expenses: 0 };
     monthlyMap[month].expenses += e.amount;
   });
   
   const monthlyData = Object.entries(monthlyMap)
     .map(([month, data]) => ({ 
       month, 
-      sales: data.sales, 
+      sales: data.sales + data.invoice, 
       cost: data.cost, 
       expenses: data.expenses, 
       netProfit: data.gross - data.expenses 
@@ -66,6 +87,15 @@ export default function Reports({ sales, filter, setFilter, categories, lowStock
     catMap[s.category].sales += s.totalPrice;
     catMap[s.category].cost += (s.costPrice || 0) * s.quantity;
     catMap[s.category].qty += s.quantity;
+  });
+  invoices.filter(i => i.status === 'PAID').forEach(i => {
+    let items = typeof i.items === 'string' ? JSON.parse(i.items || '[]') : (i.items || []);
+    items.forEach(item => {
+      let cat = item.category || 'Service';
+      if (!catMap[cat]) catMap[cat] = { sales: 0, cost: 0, qty: 0 };
+      catMap[cat].sales += item.quantity * item.unitPrice;
+      catMap[cat].qty += item.quantity;
+    });
   });
   const catData = Object.entries(catMap).map(([cat, d]) => ({
     category: cat,
@@ -81,6 +111,11 @@ export default function Reports({ sales, filter, setFilter, categories, lowStock
     if (!paymentMap[method]) paymentMap[method] = { revenue: 0 };
     paymentMap[method].revenue += s.totalPrice;
   });
+  invoices.filter(i => i.status === 'PAID').forEach(i => {
+    let method = 'Invoice/Bank Transfer';
+    if (!paymentMap[method]) paymentMap[method] = { revenue: 0 };
+    paymentMap[method].revenue += (i.total || 0);
+  });
   const paymentData = Object.entries(paymentMap).map(([name, data]) => ({ name, value: data.revenue }));
   const COLORS = ['#0088FE', '#00C49F', '#FFBB28', '#FF8042', '#a855f7', '#ec4899'];
 
@@ -91,6 +126,15 @@ export default function Reports({ sales, filter, setFilter, categories, lowStock
     if (!itemsMap[s.productName]) itemsMap[s.productName] = { quantity: 0, revenue: 0 };
     itemsMap[s.productName].quantity += s.quantity;
     itemsMap[s.productName].revenue += s.totalPrice;
+  });
+  invoices.filter(i => i.status === 'PAID').forEach(i => {
+    let items = typeof i.items === 'string' ? JSON.parse(i.items || '[]') : (i.items || []);
+    items.forEach(item => {
+      let name = item.description || 'Service Billed';
+      if (!itemsMap[name]) itemsMap[name] = { quantity: 0, revenue: 0 };
+      itemsMap[name].quantity += item.quantity;
+      itemsMap[name].revenue += item.quantity * item.unitPrice;
+    });
   });
   const topItemsData = Object.entries(itemsMap)
     .map(([name, data]) => ({ name, ...data }))
@@ -104,11 +148,22 @@ export default function Reports({ sales, filter, setFilter, categories, lowStock
     hourlyMap[hourStr] = { revenue: 0, orders: 0 };
   }
   sales.forEach(s => {
-    if (s.createdAt) {
-      const hour = new Date(s.createdAt).getHours();
+    if (s.createdAt || s.date) {
+      const dateStr = s.createdAt || s.date;
+      const hour = new Date(dateStr).getHours();
       if (hour >= 6 && hour < 24) {
         const hourStr = hour.toString().padStart(2, '0') + ':00';
         hourlyMap[hourStr].revenue += s.totalPrice;
+        hourlyMap[hourStr].orders += 1;
+      }
+    }
+  });
+  invoices.filter(i => i.status === 'PAID').forEach(i => {
+    if (i.createdAt) {
+      const hour = new Date(i.createdAt).getHours();
+      if (hour >= 6 && hour < 24) {
+        const hourStr = hour.toString().padStart(2, '0') + ':00';
+        hourlyMap[hourStr].revenue += (i.total || 0);
         hourlyMap[hourStr].orders += 1;
       }
     }
@@ -169,9 +224,10 @@ export default function Reports({ sales, filter, setFilter, categories, lowStock
     doc.setFontSize(10);
     doc.text(`Generated on: ${now}`, 14, 22);
     
-    doc.text(`Total Revenue: ${totalSales.toLocaleString()} FRW`, 14, 30);
-    doc.text(`Total Expenses: ${totalExpenses.toLocaleString()} FRW`, 14, 36);
-    doc.text(`Net Profit: ${netProfit.toLocaleString()} FRW`, 14, 42);
+    doc.text(`Total Revenue (Sales + Invoices): ${totalRevenue.toLocaleString()} FRW`, 14, 30);
+    doc.text(`POS Sales: ${totalSales.toLocaleString()} FRW | Invoices: ${invoiceRevenue.toLocaleString()} FRW`, 14, 36);
+    doc.text(`Total Expenses: ${totalExpenses.toLocaleString()} FRW`, 14, 42);
+    doc.text(`Net Profit: ${netProfit.toLocaleString()} FRW`, 14, 48);
 
     autoTable(doc, {
       head: [['Category', 'Qty Sold', 'Sales (FRW)', 'Cost (FRW)', 'Gross Profit (FRW)']],
@@ -289,7 +345,13 @@ export default function Reports({ sales, filter, setFilter, categories, lowStock
       )}
 
       <div className="summary-cards">
-        <div className="card"><h3>Total Revenue</h3><p className="value">{totalSales.toLocaleString()} FRW</p></div>
+        <div className="card">
+          <h3>Total Revenue</h3>
+          <p className="value">{totalRevenue.toLocaleString()} FRW</p>
+          <div style={{ fontSize: '0.85em', color: 'var(--text-secondary)', marginTop: '5px' }}>
+            POS: {totalSales.toLocaleString()} | Invoices: {invoiceRevenue.toLocaleString()}
+          </div>
+        </div>
         <div className="card"><h3>Total Cost of Goods</h3><p className="value">{totalCost.toLocaleString()} FRW</p></div>
         <div className="card"><h3>Total Expenses</h3><p className="value warning">{totalExpenses.toLocaleString()} FRW</p></div>
         <div className="card"><h3>Net Profit</h3><p className="value interest">{netProfit.toLocaleString()} FRW</p></div>

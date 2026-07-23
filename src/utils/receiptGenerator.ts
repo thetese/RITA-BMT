@@ -10,7 +10,7 @@ export const generateThermalReceiptHTML = (cart, total, receiptId, paymentMethod
     <tr>
       <td style="padding: 4px 0;">
         ${item.productName} (${item.taxTyCd === 'A' ? 'A' : 'B'})<br>
-        <small>${item.quantity} x ${item.unitPrice.toLocaleString()}</small>
+        <small>${item.quantity}${item.unit && item.unit !== 'Pcs' ? ' ' + item.unit : ''} x ${item.unitPrice.toLocaleString()}</small>
         ${dcAmt > 0 ? `<br><small style="color: #666;">Disc: -${dcAmt.toLocaleString()}</small>` : ''}
       </td>
       <td style="text-align: right; vertical-align: bottom; padding: 4px 0;">${finTot.toLocaleString()}</td>
@@ -308,7 +308,7 @@ export const generateProformaHTML = (cart, total, customerName, sellerName, comp
     <tr>
       <td style="padding: 4px 0;">
         ${item.productName}<br>
-        <small>${item.quantity} x ${item.unitPrice.toLocaleString()}</small>
+        <small>${item.quantity}${item.unit && item.unit !== 'Pcs' ? ' ' + item.unit : ''} x ${item.unitPrice.toLocaleString()}</small>
         ${dcAmt > 0 ? `<br><small style="color: #666;">Disc: -${dcAmt.toLocaleString()}</small>` : ''}
       </td>
       <td style="text-align: right; vertical-align: bottom; padding: 4px 0;">${finTot.toLocaleString()}</td>

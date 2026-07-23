@@ -27,7 +27,10 @@ import {
   X,
   Eye,
   EyeOff,
-  Check
+  Check,
+  Upload,
+  Settings2,
+  Printer
 } from 'lucide-react';
 import './AppSwitcher.css';
 
@@ -208,97 +211,95 @@ function AccountSettingsModal({ currentUser, onClose }) {
   );
 }
 
+import { useStoreLocation } from '../context/StoreContext';
+import StoreManager from './StoreManager';
+
 export default function AppSwitcher({ setCurrentModule, currentUser, onLogout, toggleTheme, theme, setPage }) {
+  const { currentStore, setCurrentStore, availableStores } = useStoreLocation();
   const isAdmin = currentUser?.role === 'Admin';
   const isSales = currentUser?.role === 'Sales';
   const isWorker = currentUser?.role === 'Worker';
   const [search, setSearch] = useState('');
   const [showDropdown, setShowDropdown] = useState(false);
+  const [showStoreDropdown, setShowStoreDropdown] = useState(false);
   const [showAccountSettings, setShowAccountSettings] = useState(false);
+  const [showStoreManager, setShowStoreManager] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
+  const storeDropdownRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     const handler = (e: MouseEvent) => {
       if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
         setShowDropdown(false);
       }
+      if (storeDropdownRef.current && !storeDropdownRef.current.contains(e.target as Node)) {
+        setShowStoreDropdown(false);
+      }
     };
     document.addEventListener('mousedown', handler);
     return () => document.removeEventListener('mousedown', handler);
   }, []);
 
-  const apps = [
-    {
-      id: 'retail',
-      name: 'Retail POS',
-      desc: 'Manage sales, customers and transactions',
-      icon: <ShoppingBag size={24} />,
-      watermark: <ShoppingCart size={80} strokeWidth={1} />,
-      gradient: 'linear-gradient(135deg, #e6f4ea 0%, #d4edda 50%, #c3e6cb 100%)',
-      iconBg: '#064e3b',
-      visible: isAdmin || (!isSales && !isWorker)
-    },
-    {
-      id: 'restaurant',
-      name: 'Restaurant POS',
-      desc: 'Streamline orders, tables and kitchen operations',
-      icon: <UtensilsCrossed size={24} />,
-      watermark: <ConciergeBell size={80} strokeWidth={1} />,
-      gradient: 'linear-gradient(135deg, #fff3e0 0%, #ffe0b2 50%, #ffcc80 100%)',
-      iconBg: '#d97706',
-      visible: isAdmin || (!isSales && !isWorker)
-    },
-    {
-      id: 'service',
-      name: 'Service CRM',
-      desc: 'Manage clients, services and relationships',
-      icon: <Target size={24} />,
-      watermark: <Users2 size={80} strokeWidth={1} />,
-      gradient: 'linear-gradient(135deg, #e8eaf6 0%, #c5cae9 50%, #9fa8da 100%)',
-      iconBg: '#1e3a8a',
-      visible: isAdmin || isSales
-    },
-    {
-      id: 'projects',
-      name: 'Projects & Tasks',
-      desc: 'Plan, assign and track projects efficiently',
-      icon: <Briefcase size={24} />,
-      watermark: <ClipboardList size={80} strokeWidth={1} />,
-      gradient: 'linear-gradient(135deg, #e0f2f1 0%, #b2dfdb 50%, #80cbc4 100%)',
-      iconBg: '#064e3b',
-      visible: isAdmin || isWorker || isSales
-    },
-    {
-      id: 'inventory',
-      name: 'Inventory',
-      desc: 'Track stock, products and suppliers',
-      icon: <PackageSearch size={24} />,
-      watermark: <Warehouse size={80} strokeWidth={1} />,
-      gradient: 'linear-gradient(135deg, #fef9e7 0%, #fdeaa8 50%, #f9e079 100%)',
-      iconBg: '#d97706',
-      visible: isAdmin
-    },
-    {
-      id: 'hr',
-      name: 'People & HR',
-      desc: 'Manage employees, attendance and payroll',
-      icon: <Users size={24} />,
-      watermark: <UserCircle size={80} strokeWidth={1} />,
-      gradient: 'linear-gradient(135deg, #e3f2fd 0%, #bbdefb 50%, #90caf9 100%)',
-      iconBg: '#1e3a8a',
-      visible: isAdmin
-    },
-    {
-      id: 'finance',
-      name: 'Finance',
-      desc: 'Monitor cash flow, expenses and financial reports',
-      icon: <LineChart size={24} />,
-      watermark: <Database size={80} strokeWidth={1} />,
-      gradient: 'linear-gradient(135deg, #fce4ec 0%, #f8bbd0 50%, #f48fb1 100%)',
-      iconBg: '#064e3b',
-      visible: isAdmin
+  const [apps, setApps] = useState<any[]>([]);
+
+  const fetchModules = async () => {
+    try {
+      const modules = await (window as any).api.getInstalledModules();
+      
+      // Map string icons back to JSX and check visibility
+      const mappedModules = modules.map((mod: any) => {
+        let IconComp = ShoppingBag;
+        let WatermarkComp = ShoppingCart;
+        
+        if (mod.icon === 'UtensilsCrossed' || mod.icon === 'Utensils') IconComp = UtensilsCrossed;
+        else if (mod.icon === 'Target') IconComp = Target;
+        else if (mod.icon === 'Briefcase' || mod.icon === 'FolderKanban') IconComp = Briefcase;
+        else if (mod.icon === 'PackageSearch' || mod.icon === 'Package') IconComp = PackageSearch;
+        else if (mod.icon === 'Users') IconComp = Users;
+        else if (mod.icon === 'LineChart' || mod.icon === 'Landmark') IconComp = LineChart;
+        else if (mod.icon === 'Printer') IconComp = Printer;
+        
+        if (mod.watermark === 'ConciergeBell') WatermarkComp = ConciergeBell;
+        else if (mod.watermark === 'Users2') WatermarkComp = Users2;
+        else if (mod.watermark === 'ClipboardList') WatermarkComp = ClipboardList;
+        else if (mod.watermark === 'Warehouse') WatermarkComp = Warehouse;
+        else if (mod.watermark === 'UserCircle') WatermarkComp = UserCircle;
+        else if (mod.watermark === 'Database') WatermarkComp = Database;
+
+        // Check permissions
+        const hasPermission = isAdmin || (mod.roles && mod.roles.includes(currentUser?.role));
+
+        return {
+          ...mod,
+          icon: <IconComp size={24} />,
+          watermark: <WatermarkComp size={80} strokeWidth={1} />,
+          visible: hasPermission
+        };
+      });
+      
+      setApps(mappedModules);
+    } catch (err) {
+      console.error("Failed to load modules:", err);
     }
-  ];
+  };
+
+  useEffect(() => {
+    fetchModules();
+  }, [currentUser]);
+
+  const handleInstallPlugin = async () => {
+    try {
+      const res = await (window as any).api.installPluginZip();
+      if (res.success) {
+        alert(res.message);
+        fetchModules();
+      } else if (res.error !== 'Cancelled') {
+        alert('Error installing plugin: ' + res.error);
+      }
+    } catch (err: any) {
+      alert('Error: ' + err.message);
+    }
+  };
 
   const visibleApps = apps
     .filter(app => app.visible)
@@ -315,15 +316,71 @@ export default function AppSwitcher({ setCurrentModule, currentUser, onLogout, t
           <div className="as-logo-text">Rita BMT</div>
         </div>
         
-        <div className="as-nav-right" ref={dropdownRef}>
-          <div className="as-user-profile" onClick={() => setShowDropdown(!showDropdown)}>
-            <div className="as-avatar">{initials}</div>
-            <div className="as-user-info">
-              <span className="as-user-name">{currentUser?.username || 'Admin'}</span>
-              <span className="as-user-role">{currentUser?.role || 'Admin'}</span>
+        <div className="as-nav-right">
+          {/* Branch Selector (Admins Only) */}
+          {isAdmin && (
+            <div ref={storeDropdownRef} style={{ position: 'relative', marginRight: '15px' }}>
+              <button 
+                onClick={() => setShowStoreDropdown(!showStoreDropdown)}
+                style={{
+                  display: 'flex', alignItems: 'center', gap: '8px',
+                  background: 'var(--bg-secondary)', border: '1px solid var(--border-color)',
+                  padding: '6px 12px', borderRadius: '8px', cursor: 'pointer',
+                  color: 'var(--text-primary)', fontWeight: 600, fontSize: '0.9rem'
+                }}
+              >
+                <Warehouse size={16} />
+                {currentStore?.name || 'All Branches'}
+                <ChevronDown size={14} style={{ opacity: 0.7 }} />
+              </button>
+              
+              {showStoreDropdown && (
+                <div className="as-dropdown" style={{ right: 0, top: '100%', marginTop: '8px', minWidth: '200px' }}>
+                  <div className="as-dropdown-header" style={{ padding: '10px 15px' }}>
+                    <div style={{ fontWeight: 600, fontSize: '0.85rem', color: '#64748b', textTransform: 'uppercase' }}>Select Branch</div>
+                  </div>
+                  <div className="as-dropdown-divider" style={{ margin: 0 }}></div>
+                  <button 
+                    className="as-dropdown-item" 
+                    onClick={() => { setCurrentStore({ id: 'ALL', name: 'All Branches', address: '', phone: '' }); setShowStoreDropdown(false); }}
+                    style={{ fontWeight: currentStore?.id === 'ALL' ? 'bold' : 'normal', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}
+                  >
+                    All Branches
+                    {currentStore?.id === 'ALL' && <Check size={16} color="var(--primary)" />}
+                  </button>
+                  {availableStores.map(store => (
+                    <button 
+                      key={store.id}
+                      className="as-dropdown-item" 
+                      onClick={() => { setCurrentStore(store); setShowStoreDropdown(false); }}
+                      style={{ fontWeight: currentStore?.id === store.id ? 'bold' : 'normal', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}
+                    >
+                      {store.name}
+                      {currentStore?.id === store.id && <Check size={16} color="var(--primary)" />}
+                    </button>
+                  ))}
+                  <div className="as-dropdown-divider" style={{ margin: 0 }}></div>
+                  <button 
+                    className="as-dropdown-item" 
+                    onClick={() => { setShowStoreManager(true); setShowStoreDropdown(false); }}
+                    style={{ color: 'var(--primary)', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '8px' }}
+                  >
+                    <Settings2 size={16} /> Manage Branches
+                  </button>
+                </div>
+              )}
             </div>
-            <ChevronDown size={16} color="#64748b" style={{ transition: 'transform 0.2s', transform: showDropdown ? 'rotate(180deg)' : 'none' }} />
-          </div>
+          )}
+
+          <div ref={dropdownRef} style={{ position: 'relative' }}>
+            <div className="as-user-profile" onClick={() => setShowDropdown(!showDropdown)}>
+              <div className="as-avatar">{initials}</div>
+              <div className="as-user-info">
+                <span className="as-user-name">{currentUser?.username || 'Admin'}</span>
+                <span className="as-user-role">{currentUser?.role || 'Admin'}</span>
+              </div>
+              <ChevronDown size={16} color="#64748b" style={{ transition: 'transform 0.2s', transform: showDropdown ? 'rotate(180deg)' : 'none' }} />
+            </div>
 
           {showDropdown && (
             <div className="as-dropdown">
@@ -352,6 +409,7 @@ export default function AppSwitcher({ setCurrentModule, currentUser, onLogout, t
           )}
         </div>
       </div>
+    </div>
 
       {/* Main Content */}
       <div className="app-switcher-main">
@@ -362,7 +420,16 @@ export default function AppSwitcher({ setCurrentModule, currentUser, onLogout, t
             <div className="as-underline"></div>
           </div>
           
-          <div className="as-actions">
+          <div className="as-actions" style={{ display: 'flex', gap: '15px', alignItems: 'center' }}>
+            {isAdmin && (
+              <button 
+                className="btn-install-plugin"
+                onClick={handleInstallPlugin}
+              >
+                <Upload size={16} />
+                Install Plugin
+              </button>
+            )}
             <div className="as-search-bar">
               <Search size={18} />
               <input 
@@ -380,10 +447,30 @@ export default function AppSwitcher({ setCurrentModule, currentUser, onLogout, t
             <div 
               key={app.id} 
               className="as-app-card"
-              style={{ background: app.gradient }}
-              onClick={() => setCurrentModule(app.id)}
+              style={{ 
+                background: app.gradient,
+                '--app-shadow': `${app.iconBg}4d`
+              } as React.CSSProperties}
+              onClick={() => {
+                setCurrentModule(app);
+                if (app.id === 'service') {
+                  setPage('crm');
+                } else if (app.id === 'projects') {
+                  setPage('management_dash');
+                } else if (app.id === 'hr') {
+                  setPage('customers');
+                } else if (app.id === 'finance') {
+                  setPage('reports');
+                } else {
+                  setPage('dashboard');
+                }
+              }}
             >
-              <div className="as-card-watermark">{app.watermark}</div>
+              {app.watermark && (
+                <div className="as-card-watermark">
+                  {app.watermark}
+                </div>
+              )}
               <div className="as-app-card-content">
                 <div className="as-app-card-header">
                   <div className="as-app-icon-container" style={{ background: app.iconBg }}>
@@ -415,6 +502,22 @@ export default function AppSwitcher({ setCurrentModule, currentUser, onLogout, t
 
       {showAccountSettings && (
         <AccountSettingsModal currentUser={currentUser} onClose={() => setShowAccountSettings(false)} />
+      )}
+
+      {showStoreManager && (
+        <div className="as-modal-overlay" onClick={() => setShowStoreManager(false)}>
+          <div className="as-modal" onClick={e => e.stopPropagation()} style={{ width: '800px', maxWidth: '90vw' }}>
+            <div className="as-modal-header" style={{ paddingBottom: 0, borderBottom: 'none' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                <h2 style={{ margin: 0, fontSize: '1.2rem' }}>Manage Branches</h2>
+              </div>
+              <button className="as-modal-close" onClick={() => setShowStoreManager(false)}><X size={20} /></button>
+            </div>
+            <div className="as-modal-body" style={{ maxHeight: '70vh', overflowY: 'auto' }}>
+              <StoreManager />
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

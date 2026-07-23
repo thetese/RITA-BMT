@@ -1,0 +1,16 @@
+{
+  "id": "rita-plugin-restaurant",
+  "name": "Restaurant POS",
+  "description": "Streamline orders, tables and kitchen operations",
+  "version": "1.0.0",
+  "icon": "UtensilsCrossed",
+  "iconBg": "#f97316",
+  "gradient": "linear-gradient(180deg, #311105 0%, #7c2d12 50%, #ea580c 100%)",
+  "roles": [
+    "Admin",
+    "Waiter",
+    "Kitchen",
+    "Manager"
+  ],
+  "entryFile": "dist/plugin.js"
+}

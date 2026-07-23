@@ -1,0 +1,14 @@
+{
+  "id": "rita-plugin-service",
+  "name": "Service CRM",
+  "description": "Manage clients, services and relationships",
+  "version": "1.0.0",
+  "icon": "Target",
+  "iconBg": "#10b981",
+  "gradient": "linear-gradient(180deg, #022c22 0%, #065f46 50%, #059669 100%)",
+  "roles": [
+    "Admin",
+    "Sales"
+  ],
+  "entryFile": "dist/plugin.js"
+}

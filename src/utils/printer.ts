@@ -1,5 +1,6 @@
 // @ts-nocheck
 import { formatMoney } from './format';
+import QRCode from 'qrcode';
 
 export const printReceiptHTML = async (sale, companyDetails = {}) => {
   if (!window.api || !window.api.printReceipt) return false;
@@ -62,6 +63,16 @@ export const printReceiptHTML = async (sale, companyDetails = {}) => {
             <td class="right">${formatMoney(sale.totalPrice)} FRW</td>
           </tr>
         </table>
+        
+        \${sale.ebm_receipt_number ? \`
+        <div class="line"></div>
+        <div class="center bold" style="font-size: 14px; margin-bottom: 5px;">RRA EBM RECEIPT</div>
+        <div>Receipt SDC: \${sale.ebm_receipt_number}</div>
+        \${sale.ebm_internal_data ? \`<div>Internal Data: \${sale.ebm_internal_data}</div>\` : ''}
+        \${sale.ebm_signature ? \`<div style="word-wrap: break-word; word-break: break-all; font-size: 10px;">Signature: \${sale.ebm_signature}</div>\` : ''}
+        \${sale.ebm_qr_url ? \`<div class="center" style="margin-top: 5px;"><img src="\${await QRCode.toDataURL(sale.ebm_qr_url, { width: 120, margin: 1 })}" alt="EBM QR" /></div>\` : ''}
+        \` : ''}
+
         <div class="center" style="margin-top: 10px;">
           Thank you for your business!
         </div>

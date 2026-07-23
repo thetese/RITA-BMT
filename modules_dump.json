@@ -1,0 +1,37 @@
+[
+  {
+    "id": "rita-plugin-finance",
+    "name": "Finance",
+    "entry_file": "rita-plugin://rita-plugin-finance/plugin.js"
+  },
+  {
+    "id": "rita-plugin-hr",
+    "name": "People & HR",
+    "entry_file": "rita-plugin://rita-plugin-hr/plugin.js"
+  },
+  {
+    "id": "rita-plugin-inventory",
+    "name": "Inventory",
+    "entry_file": "rita-plugin://rita-plugin-inventory/plugin.js"
+  },
+  {
+    "id": "rita-plugin-projects",
+    "name": "Projects & Tasks",
+    "entry_file": "rita-plugin://rita-plugin-projects/plugin.js"
+  },
+  {
+    "id": "rita-plugin-restaurant",
+    "name": "Restaurant POS",
+    "entry_file": "rita-plugin://rita-plugin-restaurant/plugin.js"
+  },
+  {
+    "id": "rita-plugin-retail",
+    "name": "Retail POS",
+    "entry_file": "rita-plugin://rita-plugin-retail/plugin.js"
+  },
+  {
+    "id": "rita-plugin-service",
+    "name": "Service CRM",
+    "entry_file": "rita-plugin://rita-plugin-service/plugin.js"
+  }
+]

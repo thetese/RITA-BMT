@@ -2,12 +2,12 @@
 import React, { useState, useEffect } from 'react';
 import { 
   Printer, Banknote, Smartphone, CreditCard, Search, X, Trash2, Mic, PauseCircle,
-  ShoppingCart, FolderOpen, Save, Plus, ArrowLeft
+  ShoppingCart, FolderOpen, Save, Plus, ArrowLeft, MonitorPlay
 } from 'lucide-react';
 import '../styles/App.css';
 import { v4 as uuidv4 } from 'uuid';
 import { generateThermalReceiptHTML, generateProformaHTML } from '../utils/receiptGenerator';
-import { vsdcApi } from '../utils/vsdcMock';
+import { vsdcApi } from '../utils/vsdcClient';
 import ShiftManager from './ShiftManager';
 import POSLayout from './ui/POSLayout';
 import Modal from './ui/Modal';
@@ -20,6 +20,7 @@ import { buildVSDCPayload } from '../utils/vsdc';
 import { formatMoney } from '../utils/format';
 import CartItem from './ui/CartItem';
 import { printReceiptHTML } from '../utils/printer';
+import KioskView from './KioskView';
 
 export default function RetailPOS({ currentUser, categories = [], sales = [], onSave }) {
   const { showToast } = useToast();
@@ -42,6 +43,7 @@ export default function RetailPOS({ currentUser, categories = [], sales = [], on
 
   const [activeShift, setActiveShift] = useState(null);
   const [shiftMode, setShiftMode] = useState(null);
+  const [kioskMode, setKioskMode] = useState(false);
 
   // Initialize Hooks
   const { cart, setCart, addToCart, updateQuantity, updateDiscount, calculateItemDiscount, totalAmount, clearCart } = usePOSCart(products);
@@ -167,11 +169,16 @@ export default function RetailPOS({ currentUser, categories = [], sales = [], on
     }
   };
 
-  const handleCheckout = async () => {
-    if (cart.length === 0) return;
-    if (totalPaid < finalTotalAmount) {
+  const handleCheckout = async (overridePd = null) => {
+    if (cart.length === 0) return false;
+    
+    const isOverride = overridePd && !overridePd.nativeEvent;
+    const activePd = isOverride ? overridePd : paymentDetails;
+    const activeTotalPaid = (Number(activePd.Cash) || 0) + (Number(activePd.Card) || 0) + (Number(activePd.Momo) || 0) + (Number(activePd.Credit) || 0);
+
+    if (activeTotalPaid < finalTotalAmount) {
       showToast("Insufficient payment amount.", "error");
-      return;
+      return false;
     }
 
     try {
@@ -202,10 +209,10 @@ export default function RetailPOS({ currentUser, categories = [], sales = [], on
         }
       }
       
-      const { rceipt, taxblAmtA, taxblAmtB, taxAmtB, itemList } = buildVSDCPayload(cart, paymentDetails, tin, totalAmount, calculateItemDiscount, receiptId, customerInfo);
+      const { rceipt, taxblAmtA, taxblAmtB, taxAmtB, itemList } = buildVSDCPayload(cart, activePd, tin, totalAmount, calculateItemDiscount, receiptId, customerInfo);
 
       // @ts-ignore
-      rceipt.pmtTyCd = Number(paymentDetails.Cash) >= paymentDetails.Card && Number(paymentDetails.Cash) >= paymentDetails.Momo ? "01" : Number(paymentDetails.Card) >= paymentDetails.Momo ? "02" : "04";
+      rceipt.pmtTyCd = Number(activePd.Cash) >= activePd.Card && Number(activePd.Cash) >= activePd.Momo ? "01" : Number(activePd.Card) >= activePd.Momo ? "02" : "04";
       // @ts-ignore
       rceipt.salesSttsCd = "02";
       // @ts-ignore
@@ -233,14 +240,14 @@ export default function RetailPOS({ currentUser, categories = [], sales = [], on
           customerName: customerInfo ? customerInfo.name : '',
           customerId: selectedCustomer || null,
           notes: notes,
-          paymentMethod: Number(paymentDetails.Cash) >= paymentDetails.Card && Number(paymentDetails.Cash) >= paymentDetails.Momo && Number(paymentDetails.Cash) >= paymentDetails.Credit ? 'Cash' 
-                         : Number(paymentDetails.Card) >= paymentDetails.Momo && Number(paymentDetails.Card) >= paymentDetails.Credit ? 'Card' 
-                         : Number(paymentDetails.Credit) >= paymentDetails.Momo ? 'Store Credit' : 'Mobile Money',
+          paymentMethod: Number(activePd.Cash) >= activePd.Card && Number(activePd.Cash) >= activePd.Momo && Number(activePd.Cash) >= activePd.Credit ? 'Cash' 
+                         : Number(activePd.Card) >= activePd.Momo && Number(activePd.Card) >= activePd.Credit ? 'Card' 
+                         : Number(activePd.Credit) >= activePd.Momo ? 'Store Credit' : 'Mobile Money',
           paymentDetails: JSON.stringify({
-            Cash: Number(paymentDetails.Cash) || 0,
-            Card: Number(paymentDetails.Card) || 0,
-            "Mobile Money": Number(paymentDetails.Momo) || 0,
-            "Store Credit": Number(paymentDetails.Credit) || 0
+            Cash: Number(activePd.Cash) || 0,
+            Card: Number(activePd.Card) || 0,
+            "Mobile Money": Number(activePd.Momo) || 0,
+            "Store Credit": Number(activePd.Credit) || 0
           }),
           discountAmount: dcAmt,
           discountRate: dcRt,
@@ -268,7 +275,7 @@ export default function RetailPOS({ currentUser, categories = [], sales = [], on
           sdcId: vsdcResponse.data.sdcId, mrcNo: vsdcResponse.data.mrcNo, taxblAmtA, taxblAmtB, taxAmtB
         },
         {
-          Cash: Number(paymentDetails.Cash) || 0, Card: Number(paymentDetails.Card) || 0, "Mobile Money": Number(paymentDetails.Momo) || 0, "Store Credit": Number(paymentDetails.Credit) || 0
+          Cash: Number(activePd.Cash) || 0, Card: Number(activePd.Card) || 0, "Mobile Money": Number(activePd.Momo) || 0, "Store Credit": Number(activePd.Credit) || 0
         }
       );
 
@@ -290,10 +297,41 @@ export default function RetailPOS({ currentUser, categories = [], sales = [], on
       clearActiveOrder();
       await loadData();
       if (onSave) onSave();
+      return true;
 
     } catch (err) {
       showToast("Error during checkout: " + err.message, "error");
+      return false;
     }
+  };
+
+  const handleKioskHold = async () => {
+    try {
+      const orderName = `Kiosk-${Date.now().toString().slice(-4)}`;
+      await saveHeldCart(cart, orderName, 'Kiosk Customer');
+      clearCart();
+      
+      const businessName = await window.api.getSetting('businessName');
+      const businessAddress = await window.api.getSetting('businessAddress');
+      const businessPhone = await window.api.getSetting('businessPhone');
+      
+      const htmlReceipt = generateProformaHTML(
+        cart, totalAmount, 'Kiosk Customer', 'Kiosk', 
+        { businessName, businessAddress, businessPhone }, orderName
+      );
+
+      const printerName = await window.api.getSetting('receiptPrinter');
+      window.api.printReceipt(htmlReceipt, printerName || '');
+      return true;
+    } catch (e) {
+      showToast("Error saving order.", "error");
+      return false;
+    }
+  };
+
+  const handleKioskCheckout = async (pd, method) => {
+    setPaymentMethod(method);
+    return await handleCheckout(pd);
   };
 
   const filteredProducts = products.filter(p => {
@@ -362,6 +400,9 @@ export default function RetailPOS({ currentUser, categories = [], sales = [], on
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', margin: '0 0 20px 0' }}>
         <h2 style={{ margin: 0, fontSize: '1.5rem' }}>{activeOrderId ? `Sale: ${activeOrderName}` : 'New Sale'}</h2>
         <div style={{ display: 'flex', gap: '8px' }}>
+          <button className="btn-secondary btn-sm" onClick={() => setKioskMode(true)} style={{ padding: '8px 12px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+            <MonitorPlay size={16} /> Kiosk
+          </button>
           <button className="btn-secondary btn-sm" onClick={() => { loadHeldCarts(); setShowHeldModal(true); }} style={{ padding: '8px 12px', display: 'flex', alignItems: 'center', gap: '6px' }}>
             <FolderOpen size={16} /> Suspended
           </button>
@@ -430,6 +471,24 @@ export default function RetailPOS({ currentUser, categories = [], sales = [], on
       </div>
     </>
   );
+
+  if (kioskMode) {
+    return (
+      <KioskView
+        products={products}
+        categories={[...new Set(products.map(p => p.category))].filter(Boolean)}
+        cart={cart}
+        addToCart={addToCart}
+        updateQuantity={updateQuantity}
+        totalAmount={totalAmount}
+        clearCart={clearCart}
+        onExit={() => setKioskMode(false)}
+        onKioskHold={handleKioskHold}
+        onKioskCheckout={handleKioskCheckout}
+        showToast={showToast}
+      />
+    );
+  }
 
   return (
     <>

@@ -1,0 +1,14 @@
+{
+  "id": "rita-plugin-hr",
+  "name": "People & HR",
+  "description": "Core module for People & HR",
+  "version": "1.0.0",
+  "entryFile": "plugin.js",
+  "roles": [
+    "Admin",
+    "Manager"
+  ],
+  "icon": "Users",
+  "iconBg": "#ec4899",
+  "gradient": "linear-gradient(180deg, #4c0519 0%, #881337 50%, #db2777 100%)"
+}

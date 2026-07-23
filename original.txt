@@ -1,0 +1,808 @@
+Created At: 2026-07-17T02:51:08Z
+Completed At: 2026-07-17T02:51:08Z
+File Path: `file:///c:/Users/pc/Desktop/fidele/v4/electron/store/coreStore.ts`
+Total Lines: 1051
+Total Bytes: 47255
+Showing lines 1 to 800
+The following code has been modified to include a line number before every line, in the format: <line_number>: <original_line>. Please note that any changes targeting the original code should remove the line number, colon, and leading space.
+1: const crypto = require('crypto');
+2: const bcrypt = require('bcryptjs');
+3: const { dialog } = require('electron');
+4: const fs = require('fs');
+5: const Database = require('better-sqlite3');
+6: 
+7: module.exports = {
+8: 
+9:   // --- Stores ---
+10:   getStores() {
+11:     return this.db.prepare('SELECT * FROM stores ORDER BY name ASC').all();
+12:   },
+13:   addStore(store) {
+14:     const id = crypto.randomUUID();
+15:     const stmt = this.db.prepare("INSERT INTO stores (id, name, address, phone, createdAt) VALUES (?, ?, ?, ?, datetime('now'))");
+16:     stmt.run(id, store.name, store.address || '', store.phone || '');
+17:     return { ...store, id };
+18:   },
+19:   updateStore(store) {
+20:     const stmt = this.db.prepare("UPDATE stores SET name=?, address=?, phone=? WHERE id=?");
+21:     const info = stmt.run(store.name, store.address || '', store.phone || '', store.id);
+22:     return info.changes > 0;
+23:   },
+24:   deleteStore(id) {
+25:     if (id === 'default-store-id') throw new Error("Cannot delete default store");
+26:     const stmt = this.db.prepare("DELETE FROM stores WHERE id=?");
+27:     const info = stmt.run(id);
+28:     return info.changes > 0;
+29:   },
+30: 
+31:   // Modules
+32:   getInstalledModules() {
+33:     try {
+34:       // Return dynamically installed plugins from the DB
+35:       const dbModules = this.db.prepare("SELECT * FROM installed_modules WHERE is_active = 1").all();
+36:       
+37:       // Parse roles since sqlite stores them as strings (or we need to store them as JSON)
+38:       // Actually, we should parse roles if we added them in manifest.
+39:       return dbModules.map(mod => ({
+40:         ...mod,
+41:         roles: mod.roles ? JSON.parse(mod.roles) : ['Admin']
+42:       }));
+43:     } catch (e) {
+44:       console.error("Error fetching modules:", e);
+45:       return [];
+46:     }
+47:   },
+48: 
+49:   installModule(moduleData) {
+50:     const stmt = this.db.prepare(`
+51:       INSERT INTO installed_modules (id, name, description, version, icon, iconBg, gradient, entry_file, path, roles, is_active)
+52:       VALUES (@id, @name, @description, @version, @icon, @iconBg, @gradient, @entry_file, @path, @roles, 1)
+53:       ON CONFLICT(id) DO UPDATE SET
+54:         name = @name,
+55:         description = @description,
+56:         version = @version,
+57:         icon = @icon,
+58:         iconBg = @iconBg,
+59:         gradient = @gradient,
+60:         entry_file = @entry_file,
+61:         path = @path,
+62:         roles = @roles,
+63:         is_active = 1
+64:     `);
+65:     stmt.run(moduleData);
+66:     return true;
+67:   },
+68:   logAudit(userId, action, details) {
+69:     try {
+70:       const stmt = this.db.prepare("INSERT INTO audit_logs (id, userId, action, details, timestamp) VALUES (?, ?, ?, ?, datetime('now'))");
+71:       stmt.run(crypto.randomUUID(), userId || 'system', action, details || '');
+72:     } catch (e) {
+73:       console.error("Audit log error:", e);
+74:     }
+75:   },
+76: 
+77:   // Sync Queue
+78:   addSyncJob(endpoint, payload) {
+79:     try {
+80:       const stmt = this.db.prepare("INSERT INTO sync_queue (id, endpoint, payload, createdAt) VALUES (?, ?, ?, datetime('now'))");
+81:       stmt.run(crypto.randomUUID(), endpoint, JSON.stringify(payload));
+82:     } catch (e) {
+83:       console.error("Failed to add to sync queue:", e);
+84:     }
+85:   },
+86: 
+87:   getPendingSyncJobs() {
+88:     return this.db.prepare("SELECT * FROM sync_queue WHERE status = 'PENDING' ORDER BY createdAt ASC").all();
+89:   },
+90: 
+91:   markSyncJobComplete(id) {
+92:     const stmt = this.db.prepare("DELETE FROM sync_queue WHERE id = ?");
+93:     stmt.run(id);
+94:   },
+95: 
+96:   incrementSyncJobRetry(id) {
+97:     const stmt = this.db.prepare("UPDATE sync_queue SET retryCount = retryCount + 1 WHERE id = ?");
+98:     stmt.run(id);
+99:   },
+100: 
+101:   // Backup & Restore
+102:   async backupDatabase(window) {
+103:     try {
+104:       const { canceled, filePath } = await dialog.showSaveDialog(window, {
+105:         title: 'Save Database Backup',
+106:         defaultPath: 'rita-sales-backup.sqlite',
+107:         filters: [{ name: 'SQLite Database', extensions: ['sqlite'] }]
+108:       });
+109:       if (canceled || !filePath) return { success: false, error: 'Cancelled' };
+110:       
+111:       await this.db.backup(filePath);
+112:       this.logAudit('system', 'DATABASE_BACKUP', `Backed up to ${filePath}`);
+113:       return { success: true };
+114:     } catch (err) {
+115:       return { success: false, error: err.message };
+116:     }
+117:   },
+118: 
+119:   async restoreDatabase(window) {
+120:     try {
+121:       const { canceled, filePaths } = await dialog.showOpenDialog(window, {
+122:         title: 'Restore Database Backup',
+123:         filters: [{ name: 'SQLite Database', extensions: ['sqlite', 'db'] }],
+124:         properties: ['openFile']
+125:       });
+126:       if (canceled || filePaths.length === 0) return { success: false, error: 'Cancelled' };
+127:       
+128:       const sourcePath = filePaths[0];
+129:       this.db.close();
+130:       fs.copyFileSync(sourcePath, this.dbPath);
+131:       this.db = new Database(this.dbPath);
+132:       this.init();
+133:       this.logAudit('system', 'DATABASE_RESTORE', `Restored from ${sourcePath}`);
+134:       
+135:       return { success: true, restartRequired: true };
+136:     } catch (err) {
+137:       return { success: false, error: err.message };
+138:     }
+139:   },
+140: 
+141:   getSetting(key) {
+142:     const stmt = this.db.prepare('SELECT value FROM settings WHERE key = ?');
+143:     const result = stmt.get(key);
+144:     return result ? result.value : null;
+145:   },
+146: 
+147:   setSetting(key, value) {
+148:     const stmt = this.db.prepare(`
+149:       INSERT INTO settings (key, value) VALUES (?, ?)
+150:       ON CONFLICT(key) DO UPDATE SET value = excluded.value
+151:     `);
+152:     stmt.run(key, value);
+153:     return true;
+154:   },
+155: 
+156:   // Users
+157:   requireAdmin(userId) {
+158:     const adminCount = this.db.prepare("SELECT COUNT(*) as count FROM users WHERE role = 'Admin'").get().count;
+159:     if (adminCount === 0) return true; // Allow first admin creation
+160:     
+161:     if (!userId) throw new Error("Unauthorized");
+162:     const user = this.db.prepare("SELECT * FROM users WHERE id = ?").get(userId);
+163:     if (!user || user.role !== 'Admin') {
+164:       throw new Error("Admin privileges required");
+165:     }
+166:     return true;
+167:   },
+168: 
+169:   getUsers(storeId) {
+170:     return this.db.prepare('SELECT id, username, role, createdAt, storeId FROM users').all();
+171:   },
+172: 
+173:   getUserByUsername(username) {
+174:     return this.db.prepare('SELECT id, username, role, pin, createdAt, securityQuestion, securityAnswer FROM users WHERE username = ?').get(username);
+175:   },
+176: 
+177:   verifyLogin(username, password) {
+178:     const user = this.db.prepare('SELECT * FROM users WHERE username = ?').get(username);
+179:     if (!user) return null;
+180: 
+181:     let isValid = false;
+182:     // Check if the hash is a bcrypt hash (starts with $2a$ or $2b$ or $2y$)
+183:     if (user.passwordHash.startsWith('$2')) {
+184:       isValid = bcrypt.compareSync(password, user.passwordHash);
+185:     } else {
+186:       // Legacy plaintext password check
+187:       if (user.passwordHash === password) {
+188:         isValid = true;
+189:         // Transparently upgrade to bcrypt
+190:         try {
+191:           const newHash = bcrypt.hashSync(password, 10);
+192:           this.db.prepare('UPDATE users SET passwordHash = ? WHERE id = ?').run(newHash, user.id);
+193:         } catch (err) {
+194:           console.error("Failed to upgrade password hash:", err);
+195:         }
+196:       }
+197:     }
+198: 
+199:     if (isValid) {
+200:       const { passwordHash, ...safeUser } = user;
+201:       return safeUser;
+202:     }
+203:     return null;
+204:   },
+205: 
+206:   addUser(user) {
+207:     const id = crypto.randomUUID();
+208:     const hash = bcrypt.hashSync(user.passwordHash, 10);
+209:     const stmt = this.db.prepare("INSERT INTO users (id, username, passwordHash, role, pin, createdAt, securityQuestion, securityAnswer, hourlyRate, commissionRate) VALUES (?, ?, ?, ?, ?, datetime('now'), ?, ?, ?, ?)");
+210:     stmt.run(id, user.username, hash, user.role, user.pin || '', user.securityQuestion || '', user.securityAnswer || '', user.hourlyRate || 0, user.commissionRate || 0);
+211:     this.logAudit(id, 'USER_CREATED', `Created user ${user.username}`);
+212:     this.addSyncJob('users:upsert', { ...user, id, passwordHash: hash });
+213:     return { ...user, id };
+214:   },
+215: 
+216:   updateUser(user) {
+217:     let stmt, info;
+218:     if (user.passwordHash) {
+219:       const hash = bcrypt.hashSync(user.passwordHash, 10);
+220:       stmt = this.db.prepare('UPDATE users SET username=?, passwordHash=?, role=?, pin=?, securityQuestion=?, securityAnswer=?, hourlyRate=?, commissionRate=? WHERE id=?');
+221:       info = stmt.run(user.username, hash, user.role, user.pin || '', user.securityQuestion || '', user.securityAnswer || '', user.hourlyRate || 0, user.commissionRate || 0, user.id);
+222:     } else {
+223:       stmt = this.db.prepare('UPDATE users SET username=?, role=?, pin=?, securityQuestion=?, securityAnswer=?, hourlyRate=?, commissionRate=? WHERE id=?');
+224:       info = stmt.run(user.username, user.role, user.pin || '', user.securityQuestion || '', user.securityAnswer || '', user.hourlyRate || 0, user.commissionRate || 0, user.id);
+225:     }
+226:     if (info.changes > 0) {
+227:       this.addSyncJob('users:upsert', user);
+228:     }
+229:     return info.changes > 0;
+230:   },
+231: 
+232:   deleteUser(id, currentUserId) {
+233:     const stmt = this.db.prepare('DELETE FROM users WHERE id = ?');
+234:     const info = stmt.run(id);
+235:     if (info.changes > 0) {
+236:       this.logAudit(currentUserId, 'USER_DELETED', `Deleted user ${id}`);
+237:       this.addSyncJob('users:delete', { id });
+238:     }
+239:     return info.changes > 0;
+240:   },
+241: 
+242: 
+243:   // Sales
+244:   getSales(storeId) {
+245:     if (!storeId || storeId === 'general') return this.db.prepare('SELECT * FROM sales ORDER BY date DESC').all();
+246:     return this.db.prepare('SELECT * FROM sales WHERE storeId = ? ORDER BY date DESC').all(storeId);
+247:   },
+248: 
+249:   addSale(sale, userId) {
+250:     const id = crypto.randomUUID();
+251:     
+252:     const stmt = this.db.prepare(
+253:       `INSERT INTO sales (id, productName, category, quantity, unitPrice, totalPrice, costPrice, date, customerName, notes, createdAt, paymentMethod, customerId, receiptId, receiptSignature, internalData, receiptNo, status, paymentDetails, discountAmount, discountRate, waiterName, userId, storeId)
+254:        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+255:     );
+256:     
+257:     if (sale.productId) {
+258:       const prod = this.db.prepare('SELECT stockQuantity, type, comboItems FROM products WHERE id=?').get(sale.productId);
+259:       if (prod) {
+260:         if (prod.type === 'combo' && prod.comboItems) {
+261:           try {
+262:             const comboItems = JSON.parse(prod.comboItems);
+263:             for (const item of comboItems) {
+264:               const totalRequired = item.quantity * sale.quantity;
+265:               this.db.prepare('UPDATE products SET stockQuantity = stockQuantity - ? WHERE id = ?').run(totalRequired, item.productId);
+266:             }
+267:           } catch(err) {
+268:             console.error("Error deducting combo items:", err);
+269:           }
+270:         } else if (prod.stockQuantity > 0) {
+271:           this.db.prepare('UPDATE products SET stockQuantity = stockQuantity - ? WHERE id=?').run(sale.quantity, sale.productId);
+272:         }
+273:       }
+274:       
+275:       // Deduct ingredients based on recipe
+276:       try {
+277:         const recipes = this.db.prepare('SELECT ingredientId, quantityRequired FROM recipes WHERE productId = ?').all(sale.productId);
+278:         for (const recipe of recipes) {
+279:           const totalRequired = recipe.quantityRequired * sale.quantity;
+280:           this.db.prepare('UPDATE ingredients SET stockQuantity = stockQuantity - ? WHERE id = ?').run(totalRequired, recipe.ingredientId);
+281:         }
+282:       } catch (err) {
+283:         console.error("Error deducting ingredients:", err);
+284:       }
+285:     }
+286: 
+287:     stmt.run(
+288:       id, sale.productName, sale.category, sale.quantity, sale.unitPrice, 
+289:       sale.totalPrice, sale.costPrice || 0, sale.date, sale.customerName || '', sale.notes || '',
+290:       sale.paymentMethod || 'Cash', sale.customerId || null, sale.receiptId || null,
+291:       sale.receiptSignature || '', sale.internalData || '', sale.receiptNo || 0,
+292:       sale.status || 'COMPLETED', sale.paymentDetails || null, sale.discountAmount || 0, sale.discountRate || 0, sale.waiterName || null, userId || null, sale.storeId || 'default-store-id'
+293:     );
+294:     
+295:     // Add loyalty points if customerId exists
+296:     if (sale.customerId && sale.totalPrice > 0) {
+297:       const earnedPoints = Math.floor(sale.totalPrice / 1000);
+298:       if (earnedPoints > 0) {
+299:         try {
+300:           this.db.prepare('UPDATE customers SET points = COALESCE(points, 0) + ? WHERE id=?').run(earnedPoints, sale.customerId);
+301:         } catch (err) { console.error("Error adding points:", err); }
+302:       }
+303:     }
+304: 
+305:     this.logAudit(userId, 'SALE_ADDED', `Added sale ${id} for ${sale.totalPrice}`);
+306:     
+307:     // Enqueue for cloud sync
+308:     this.addSyncJob('sales:upsert', { ...sale, id });
+309: 
+310:     return { ...sale, id };
+311:   },
+312: 
+313: 
+314:   
+315:   checkoutTransaction(payload) {
+316:     const { items, customerId, customerName, paymentMethod, paymentDetails, discountAmount, discountRate, waiterName, userId, receiptId, notes, date, status, receiptSignature, internalData, receiptNo } = payload;
+317:     
+318:     // SQLite transaction
+319:     const transaction = this.db.transaction(() => {
+320:       const results = [];
+321:       let totalEarnedPoints = 0;
+322:       
+323:       for (const item of items) {
+324:         const id = crypto.randomUUID();
+325:         const sale = { ...item };
+326:         
+327:         const stmt = this.db.prepare(
+328:           `INSERT INTO sales (id, productName, category, quantity, unitPrice, totalPrice, costPrice, date, customerName, notes, createdAt, paymentMethod, customerId, receiptId, receiptSignature, internalData, receiptNo, status, paymentDetails, discountAmount, discountRate, waiterName, userId)
+329:            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+330:         );
+331:         
+332:         if (sale.productId) {
+333:           const prod = this.db.prepare('SELECT stockQuantity, type, comboItems FROM products WHERE id=?').get(sale.productId);
+334:           if (prod) {
+335:             if (prod.type === 'combo' && prod.comboItems) {
+336:               const comboItems = JSON.parse(prod.comboItems);
+337:               for (const cItem of comboItems) {
+338:                 const totalRequired = cItem.quantity * sale.quantity;
+339:                 this.db.prepare('UPDATE products SET stockQuantity = stockQuantity - ? WHERE id = ?').run(totalRequired, cItem.productId);
+340:               }
+341:             } else if (prod.stockQuantity > 0) {
+342:               this.db.prepare('UPDATE products SET stockQuantity = stockQuantity - ? WHERE id=?').run(sale.quantity, sale.productId);
+343:             }
+344:           }
+345:           
+346:           // Deduct ingredients based on recipe
+347:           const recipes = this.db.prepare('SELECT ingredientId, quantityRequired FROM recipes WHERE productId = ?').all(sale.productId);
+348:           for (const recipe of recipes) {
+349:             const totalRequired = recipe.quantityRequired * sale.quantity;
+350:             this.db.prepare('UPDATE ingredients SET stockQuantity = stockQuantity - ? WHERE id = ?').run(totalRequired, recipe.ingredientId);
+351:           }
+352:         }
+353: 
+354:         stmt.run(
+355:           id, sale.productName, sale.category, sale.quantity, sale.unitPrice, 
+356:           sale.totalPrice, sale.costPrice || 0, date || sale.date || new Date().toISOString(), customerName || '', notes || sale.notes || '',
+357:           paymentMethod || 'Cash', customerId || null, receiptId || null,
+358:           receiptSignature || '', internalData || '', receiptNo || 0,
+359:           status || 'COMPLETED', paymentDetails ? JSON.stringify(paymentDetails) : null, discountAmount || 0, discountRate || 0, waiterName || null, userId || null
+360:         );
+361:         
+362:         if (customerId && sale.totalPrice > 0) {
+363:           totalEarnedPoints += Math.floor(sale.totalPrice / 1000);
+364:         }
+365:         
+366:         results.push({ ...sale, id });
+367:       }
+368:       
+369:       if (customerId && totalEarnedPoints > 0) {
+370:         this.db.prepare('UPDATE customers SET points = COALESCE(points, 0) + ? WHERE id=?').run(totalEarnedPoints, customerId);
+371:       }
+372:       
+373:       return results;
+374:     });
+375: 
+376:     try {
+377:       const savedItems = transaction();
+378:       
+379:       // Audit and sync
+380:       this.logAudit(userId, 'CHECKOUT_COMPLETED', `Checkout completed with ${savedItems.length} items`);
+381:       for (const sale of savedItems) {
+382:         this.addSyncJob('sales:upsert', sale);
+383:       }
+384:       
+385:       return savedItems;
+386:     } catch (e) {
+387:       console.error("Checkout transaction failed:", e);
+388:       throw e;
+389:     }
+390:   },
+391: 
+392:   updateSale(sale, userId) {
+393:     const stmt = this.db.prepare(
+394:       `UPDATE sales SET productName=?, category=?, quantity=?, unitPrice=?, totalPrice=?, costPrice=?, date=?, customerName=?, notes=?, paymentMethod=?, customerId=?, status=?, paymentDetails=?, discountAmount=?, discountRate=?, waiterName=?
+395:        WHERE id=?`
+396:     );
+397:     const info = stmt.run(
+398:       sale.productName, sale.category, sale.quantity, sale.unitPrice, 
+399:       sale.totalPrice, sale.costPrice || 0, sale.date, sale.customerName || '', sale.notes || '', sale.paymentMethod || 'Cash', sale.customerId || null, 
+400:       sale.status || 'COMPLETED', sale.paymentDetails || null, sale.discountAmount || 0, sale.discountRate || 0, sale.waiterName || null,
+401:       sale.id
+402:     );
+403:     if (info.changes > 0) {
+404:       this.logAudit(userId, 'SALE_UPDATED', `Updated sale ${sale.id}`);
+405:       this.addSyncJob('sales:upsert', sale);
+406:     }
+407:     return info.changes > 0;
+408:   },
+409: 
+410:   deleteSale(id, userId) {
+411:     const sale = this.db.prepare('SELECT * FROM sales WHERE id = ?').get(id);
+412:     if (sale) {
+413:       // Restore product stock
+414:       const prod = this.db.prepare('SELECT type, comboItems FROM products WHERE id=?').get(sale.productId);
+415:       if (prod && prod.type === 'combo' && prod.comboItems) {
+416:         try {
+417:           const comboItems = JSON.parse(prod.comboItems);
+418:           for (const item of comboItems) {
+419:             const totalRequired = item.quantity * sale.quantity;
+420:             this.db.prepare('UPDATE products SET stockQuantity = stockQuantity + ? WHERE id = ?').run(totalRequired, item.productId);
+421:           }
+422:         } catch(err) {
+423:           console.error("Error restoring combo items:", err);
+424:         }
+425:       } else {
+426:         this.db.prepare('UPDATE products SET stockQuantity = stockQuantity + ? WHERE id=?').run(sale.quantity, sale.productId);
+427:       }
+428:         
+429:       // Restore ingredients based on recipe
+430:       try {
+431:         const recipes = this.db.prepare('SELECT ingredientId, quantityRequired FROM recipes WHERE productId = ?').all(sale.productId);
+432:         for (const recipe of recipes) {
+433:           const totalRequired = recipe.quantityRequired * sale.quantity;
+434:           this.db.prepare('UPDATE ingredients SET stockQuantity = stockQuantity + ? WHERE id = ?').run(totalRequired, recipe.ingredientId);
+435:         }
+436:       } catch (err) {
+437:         console.error("Error restoring ingredients:", err);
+438:       }
+439:       
+440:       // Deduct loyalty points if applicable
+441:       if (sale.customerId && sale.totalPrice > 0) {
+442:         const earnedPoints = Math.floor(sale.totalPrice / 1000);
+443:         if (earnedPoints > 0) {
+444:           try {
+445:             this.db.prepare('UPDATE customers SET points = MAX(0, COALESCE(points, 0) - ?) WHERE id=?').run(earnedPoints, sale.customerId);
+446:           } catch (err) { console.error("Error deducting points:", err); }
+447:         }
+448:       }
+449:     }
+450: 
+451:     const stmt = this.db.prepare(`DELETE FROM sales WHERE id = ?`);
+452:     const info = stmt.run(id);
+453:     if (info.changes > 0) {
+454:       this.logAudit(userId, 'SALE_DELETED', `Deleted sale ${id}`);
+455:       this.addSyncJob('sales:delete', { id });
+456:     }
+457:     return info.changes > 0;
+458:   },
+459: 
+460:   refundSale(id, userId) {
+461:     const sale = this.db.prepare('SELECT * FROM sales WHERE id = ?').get(id);
+462:     if (!sale) return false;
+463:     if (sale.status === 'REFUNDED') return true; // Already refunded
+464: 
+465:     // Restore product stock
+466:     if (sale.productId) {
+467:       const prod = this.db.prepare('SELECT type, comboItems FROM products WHERE id=?').get(sale.productId);
+468:       if (prod && prod.type === 'combo' && prod.comboItems) {
+469:         try {
+470:           const comboItems = JSON.parse(prod.comboItems);
+471:           for (const item of comboItems) {
+472:             const totalRequired = item.quantity * sale.quantity;
+473:             this.db.prepare('UPDATE products SET stockQuantity = stockQuantity + ? WHERE id = ?').run(totalRequired, item.productId);
+474:           }
+475:         } catch(err) {
+476:           console.error("Error restoring combo items:", err);
+477:         }
+478:       } else {
+479:         this.db.prepare('UPDATE products SET stockQuantity = stockQuantity + ? WHERE id=?').run(sale.quantity, sale.productId);
+480:       }
+481:       
+482:       // Restore ingredients based on recipe
+483:       try {
+484:         const recipes = this.db.prepare('SELECT ingredientId, quantityRequired FROM recipes WHERE productId = ?').all(sale.productId);
+485:         for (const recipe of recipes) {
+486:           const totalRequired = recipe.quantityRequired * sale.quantity;
+487:           this.db.prepare('UPDATE ingredients SET stockQuantity = stockQuantity + ? WHERE id = ?').run(totalRequired, recipe.ingredientId);
+488:         }
+489:       } catch (err) {
+490:         console.error("Error restoring ingredients:", err);
+491:       }
+492:     }
+493:     
+494:     // Deduct loyalty points if applicable
+495:     if (sale.customerId && sale.totalPrice > 0) {
+496:       const earnedPoints = Math.floor(sale.totalPrice / 1000);
+497:       if (earnedPoints > 0) {
+498:         try {
+499:           this.db.prepare('UPDATE customers SET points = MAX(0, COALESCE(points, 0) - ?) WHERE id=?').run(earnedPoints, sale.customerId);
+500:         } catch (err) { console.error("Error deducting points:", err); }
+501:       }
+502:     }
+503: 
+504:     const stmt = this.db.prepare(`UPDATE sales SET status = 'REFUNDED' WHERE id = ?`);
+505:     const info = stmt.run(id);
+506:     if (info.changes > 0) {
+507:       this.logAudit(userId, 'SALE_REFUNDED', `Refunded sale ${id}`);
+508:       this.addSyncJob('sales:upsert', { ...sale, status: 'REFUNDED' });
+509:     }
+510:     return info.changes > 0;
+511:   },
+512: 
+513:   // Held Carts
+514:   getHeldCarts(storeId) {
+515:     if (!storeId || storeId === 'general') return this.db.prepare('SELECT * FROM held_carts ORDER BY updatedAt DESC, createdAt DESC').all();
+516:     return this.db.prepare('SELECT * FROM held_carts WHERE storeId = ? ORDER BY updatedAt DESC, createdAt DESC').all(storeId);
+517:   },
+518: 
+519:   addHeldCart(heldCart) {
+520:     const id = crypto.randomUUID();
+521:     const stmt = this.db.prepare("INSERT INTO held_carts (id, name, cartData, createdAt, updatedAt, waiterName, storeId) VALUES (?, ?, ?, datetime('now'), datetime('now'), ?, ?)");
+522:     stmt.run(id, heldCart.name, heldCart.cartData, heldCart.waiterName || 'Unknown', heldCart.storeId || 'default-store-id');
+523:     const newCart = { ...heldCart, id };
+524:     this.addSyncJob('held_carts:upsert', newCart);
+525:     return newCart;
+526:   },
+527: 
+528:   updateHeldCart(id, heldCart) {
+529:     const stmt = this.db.prepare("UPDATE held_carts SET cartData = ?, updatedAt = datetime('now') WHERE id = ?");
+530:     const info = stmt.run(heldCart.cartData, id);
+531:     if (info.changes > 0) {
+532:       const updated = this.db.prepare("SELECT * FROM held_carts WHERE id = ?").get(id);
+533:       this.addSyncJob('held_carts:upsert', updated);
+534:     }
+535:     return info.changes > 0;
+536:   },
+537: 
+538:   updateCartItemStatus(cartId, productId, status) {
+539:     const cart = this.db.prepare("SELECT cartData, name FROM held_carts WHERE id = ?").get(cartId);
+540:     if (!cart) return { success: false };
+541:     let cartData = JSON.parse(cart.cartData);
+542:     let updated = false;
+543:     let productName = '';
+544:     cartData = cartData.map(item => {
+545:       if (item.productId === productId) {
+546:         updated = true;
+547:         productName = item.productName;
+548:         return { ...item, status };
+549:       }
+550:       return item;
+551:     });
+552:     if (updated) {
+553:       const stmt = this.db.prepare("UPDATE held_carts SET cartData = ?, updatedAt = datetime('now') WHERE id = ?");
+554:       stmt.run(JSON.stringify(cartData), cartId);
+555:       const fullCart = this.db.prepare("SELECT * FROM held_carts WHERE id = ?").get(cartId);
+556:       this.addSyncJob('held_carts:upsert', fullCart);
+557:       return { success: true, productName, cartName: cart.name, newStatus: status };
+558:     }
+559:     return { success: false };
+560:   },
+561: 
+562:   deleteHeldCart(id) {
+563:     const stmt = this.db.prepare('DELETE FROM held_carts WHERE id = ?');
+564:     const info = stmt.run(id);
+565:     if (info.changes > 0) {
+566:       this.addSyncJob('held_carts:delete', { id });
+567:     }
+568:     return info.changes > 0;
+569:   },
+570: 
+571:   // Products
+572:   getProducts(storeId) {
+573:     if (!storeId || storeId === 'general') return this.db.prepare('SELECT * FROM products ORDER BY category ASC, productName ASC').all();
+574:     return this.db.prepare('SELECT * FROM products WHERE storeId = ? ORDER BY category ASC, productName ASC').all(storeId);
+575:   },
+576: 
+577:   addProduct(product, userId) {
+578:     const id = crypto.randomUUID();
+579:     const itemCd = product.itemCd || ('RW2NTBA' + Date.now().toString().slice(-7));
+580:     const stmt = this.db.prepare(
+581:       `INSERT INTO products (id, productName, category, unitPrice, costPrice, stockQuantity, taxTyCd, itemCd, itemClsCd, barcode, lowStockThreshold, type, comboItems, unit, storeId)
+582:        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+583:     );
+584:     stmt.run(
+585:       id, product.productName, product.category, product.unitPrice, product.costPrice || 0, 
+586:       product.stockQuantity || 0, product.taxTyCd || 'B', itemCd, product.itemClsCd || '5059690800', product.barcode || null, product.lowStockThreshold || 5,
+587:       product.type || 'standard', product.comboItems || null, product.unit || 'Pcs', product.storeId || 'default-store-id'
+588:     );
+589:     const newProduct = { ...product, id, itemCd, type: product.type || 'standard', comboItems: product.comboItems || null, unit: product.unit || 'Pcs' };
+590:     this.addSyncJob('products:upsert', newProduct);
+591:     return newProduct;
+592:   },
+593: 
+594:   updateProduct(product, userId) {
+595:     const stmt = this.db.prepare(
+596:       `UPDATE products SET productName=?, category=?, unitPrice=?, costPrice=?, stockQuantity=?, taxTyCd=?, itemCd=?, itemClsCd=?, barcode=?, lowStockThreshold=?, type=?, comboItems=?, unit=?
+597:        WHERE id=?`
+598:     );
+599:     const info = stmt.run(
+600:       product.productName, product.category, product.unitPrice, product.costPrice || 0, 
+601:       product.stockQuantity || 0, product.taxTyCd || 'B', product.itemCd || '', product.itemClsCd || '5059690800', product.barcode || null, product.lowStockThreshold || 5,
+602:       product.type || 'standard', product.comboItems || null, product.unit || 'Pcs',
+603:       product.id
+604:     );
+605:     if (info.changes > 0) {
+606:       this.addSyncJob('products:upsert', product);
+607:     }
+608:     return info.changes > 0;
+609:   },
+610: 
+611:   deleteProduct(id, userId) {
+612:     const stmt = this.db.prepare('DELETE FROM products WHERE id = ?');
+613:     const info = stmt.run(id);
+614:     if (info.changes > 0) {
+615:       this.addSyncJob('products:delete', { id });
+616:     }
+617:     return info.changes > 0;
+618:   },
+619: 
+620:   // Stock Movements
+621:   getStockMovements(storeId) {
+622:     if (!storeId || storeId === 'general') return this.db.prepare('SELECT * FROM stock_movements ORDER BY date DESC, createdAt DESC').all();
+623:     return this.db.prepare('SELECT * FROM stock_movements WHERE storeId = ? ORDER BY date DESC, createdAt DESC').all(storeId);
+624:   },
+625: 
+626:   addStockMovement(movement, userId) {
+627:     const id = crypto.randomUUID();
+628:     const stmt = this.db.prepare(
+629:       `INSERT INTO stock_movements (id, productId, productName, quantity, type, reason, date, userId, createdAt, storeId)
+630:        VALUES (?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), ?)`
+631:     );
+632:     stmt.run(id, movement.productId, movement.productName, movement.quantity, movement.type, movement.reason || '', movement.date, userId || null, movement.storeId || 'default-store-id');
+633: 
+634:     // Update actual stock
+635:     if (movement.productId) {
+636:       if (movement.type === 'IN') {
+637:         this.db.prepare('UPDATE products SET stockQuantity = stockQuantity + ? WHERE id=?').run(movement.quantity, movement.productId);
+638:       } else if (movement.type === 'OUT') {
+639:         this.db.prepare('UPDATE products SET stockQuantity = stockQuantity - ? WHERE id=?').run(movement.quantity, movement.productId);
+640:       }
+641:     }
+642:     this.logAudit(userId, 'STOCK_MOVEMENT', `${movement.type} ${movement.quantity} of ${movement.productName} for ${movement.reason}`);
+643:     
+644:     const newMovement = { ...movement, id };
+645:     this.addSyncJob('stock_movements:upsert', newMovement);
+646:     return newMovement;
+647:   },
+648: 
+649:   // Accounters
+650:   getAccounters() {
+651:     return this.db.prepare('SELECT * FROM accounters ORDER BY shift ASC, name ASC').all();
+652:   },
+653: 
+654:   addAccounter(accounter) {
+655:     const id = crypto.randomUUID();
+656:     const stmt = this.db.prepare('INSERT INTO accounters (id, name, shift) VALUES (?, ?, ?)');
+657:     stmt.run(id, accounter.name, accounter.shift || 'General');
+658:     const newAccounter = { ...accounter, id };
+659:     this.addSyncJob('accounters:upsert', newAccounter);
+660:     return newAccounter;
+661:   },
+662: 
+663:   updateAccounter(accounter) {
+664:     const stmt = this.db.prepare('UPDATE accounters SET name=?, shift=? WHERE id=?');
+665:     const info = stmt.run(accounter.name, accounter.shift || 'General', accounter.id);
+666:     if (info.changes > 0) {
+667:       this.addSyncJob('accounters:upsert', accounter);
+668:     }
+669:     return info.changes > 0;
+670:   },
+671: 
+672:   deleteAccounter(id) {
+673:     const stmt = this.db.prepare('DELETE FROM accounters WHERE id = ?');
+674:     const info = stmt.run(id);
+675:     if (info.changes > 0) {
+676:       this.addSyncJob('accounters:delete', { id });
+677:     }
+678:     return info.changes > 0;
+679:   },
+680: 
+681:   // Expenses
+682:   getExpenses(storeId) {
+683:     if (!storeId || storeId === 'general') return this.db.prepare('SELECT * FROM expenses ORDER BY date DESC').all();
+684:     return this.db.prepare('SELECT * FROM expenses WHERE storeId = ? ORDER BY date DESC').all(storeId);
+685:   },
+686:   
+687:   addExpense(expense, userId) {
+688:     const id = crypto.randomUUID();
+689:     const stmt = this.db.prepare("INSERT INTO expenses (id, category, amount, date, notes, projectId, status, createdAt, storeId) VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now'), ?)");
+690:     stmt.run(id, expense.category, expense.amount, expense.date, expense.notes || '', expense.projectId || null, expense.status || 'Unbilled', expense.storeId || 'default-store-id');
+691:     this.logAudit(userId, 'EXPENSE_ADDED', `Added expense ${id} for ${expense.amount}`);
+692:     const newExpense = { ...expense, id, projectId: expense.projectId || null, status: expense.status || 'Unbilled' };
+693:     this.addSyncJob('expenses:upsert', newExpense);
+694:     return newExpense;
+695:   },
+696:   
+697:   updateExpense(expense, userId) {
+698:     const stmt = this.db.prepare('UPDATE expenses SET category=?, amount=?, date=?, notes=?, projectId=?, status=? WHERE id=?');
+699:     const info = stmt.run(expense.category, expense.amount, expense.date, expense.notes || '', expense.projectId || null, expense.status || 'Unbilled', expense.id);
+700:     if (info.changes > 0) {
+701:       this.logAudit(userId, 'EXPENSE_UPDATED', `Updated expense ${expense.id}`);
+702:       this.addSyncJob('expenses:upsert', expense);
+703:     }
+704:     return info.changes > 0;
+705:   },
+706:   
+707:   deleteExpense(id, userId) {
+708:     const stmt = this.db.prepare('DELETE FROM expenses WHERE id = ?');
+709:     const info = stmt.run(id);
+710:     if (info.changes > 0) {
+711:       this.logAudit(userId, 'EXPENSE_DELETED', `Deleted expense ${id}`);
+712:       this.addSyncJob('expenses:delete', { id });
+713:     }
+714:     return info.changes > 0;
+715:   },
+716: 
+717:   // Customers
+718:   getCustomers(storeId) {
+719:     if (!storeId || storeId === 'general') return this.db.prepare('SELECT * FROM customers ORDER BY name ASC').all();
+720:     return this.db.prepare('SELECT * FROM customers WHERE storeId = ? ORDER BY name ASC').all(storeId);
+721:   },
+722:   
+723:   addCustomer(customer, userId) {
+724:     const id = crypto.randomUUID();
+725:     const stmt = this.db.prepare("INSERT INTO customers (id, name, phone, email, address, accountBalance, creditLimit, createdAt, storeId) VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now'), ?)");
+726:     stmt.run(id, customer.name, customer.phone || '', customer.email || '', customer.address || '', customer.accountBalance || 0, customer.creditLimit || 0, customer.storeId || 'default-store-id');
+727:     const newCustomer = { ...customer, id, accountBalance: customer.accountBalance || 0, creditLimit: customer.creditLimit || 0 };
+728:     this.addSyncJob('customers:upsert', newCustomer);
+729:     return newCustomer;
+730:   },
+731:   
+732:   updateCustomer(customer, userId) {
+733:     const stmt = this.db.prepare('UPDATE customers SET name=?, phone=?, email=?, address=?, accountBalance=?, creditLimit=? WHERE id=?');
+734:     const info = stmt.run(customer.name, customer.phone || '', customer.email || '', customer.address || '', customer.accountBalance || 0, customer.creditLimit || 0, customer.id);
+735:     if (info.changes > 0) {
+736:       this.addSyncJob('customers:upsert', customer);
+737:     }
+738:     return info.changes > 0;
+739:   },
+740:   
+741:   adjustCustomerBalance(id, amount) {
+742:     const stmt = this.db.prepare('UPDATE customers SET accountBalance = COALESCE(accountBalance, 0) + ? WHERE id=?');
+743:     const info = stmt.run(amount, id);
+744:     if (info.changes > 0) {
+745:       const customer = this.db.prepare('SELECT * FROM customers WHERE id=?').get(id);
+746:       this.addSyncJob('customers:upsert', customer);
+747:     }
+748:     return info.changes > 0;
+749:   },
+750:   
+751:   deductCustomerPoints(id, points) {
+752:     const stmt = this.db.prepare('UPDATE customers SET points = MAX(0, COALESCE(points, 0) - ?) WHERE id=?');
+753:     const info = stmt.run(points, id);
+754:     if (info.changes > 0) {
+755:       const customer = this.db.prepare('SELECT * FROM customers WHERE id=?').get(id);
+756:       this.addSyncJob('customers:upsert', customer);
+757:     }
+758:     return info.changes > 0;
+759:   },
+760:   
+761:   deleteCustomer(id, userId) {
+762:     const stmt = this.db.prepare('DELETE FROM customers WHERE id = ?');
+763:     const info = stmt.run(id);
+764:     if (info.changes > 0) {
+765:       this.addSyncJob('customers:delete', { id });
+766:     }
+767:     return info.changes > 0;
+768:   },
+769: 
+770:   // --- Invoices ---
+771:   getInvoices(storeId) {
+772:     if (!storeId || storeId === 'general') return this.db.prepare('SELECT * FROM invoices ORDER BY createdAt DESC').all();
+773:     return this.db.prepare('SELECT * FROM invoices WHERE storeId = ? ORDER BY createdAt DESC').all(storeId);
+774:   },
+775: 
+776:   addInvoice(inv) {
+777:     const id = crypto.randomUUID();
+778:     const stmt = this.db.prepare(`
+779:       INSERT INTO invoices (id, customerName, customerAddress, items, subtotal, tax, total, status, createdAt, storeId)
+780:        VALUES (?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), ?)
+781:     `);
+782:     stmt.run(id, inv.customerName || '', inv.customerAddress || '', inv.items || '[]', inv.subtotal || 0, inv.tax || 0, inv.total || 0, inv.status || 'PENDING', inv.storeId || 'default-store-id');
+783:     return { ...inv, id };
+784:   },
+785: 
+786:   updateInvoice(inv) {
+787:     const stmt = this.db.prepare(`
+788:       UPDATE invoices SET customerName=?, customerAddress=?, items=?, subtotal=?, tax=?, total=? WHERE id=?
+789:     `);
+790:     const info = stmt.run(inv.customerName || '', inv.customerAddress || '', inv.items || '[]', inv.subtotal || 0, inv.tax || 0, inv.total || 0, inv.id);
+791:     return info.changes > 0;
+792:   },
+793: 
+794:   updateInvoiceStatus(id, status) {
+795:     const stmt = this.db.prepare('UPDATE invoices SET status = ? WHERE id = ?');
+796:     const info = stmt.run(status, id);
+797:     return info.changes > 0;
+798:   },
+799: 
+800:   deleteInvoice(id) {
+The above content does NOT show the entire file contents. If you need to view any lines of the file which were not shown to complete your task, call this tool again to view those lines.

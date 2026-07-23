@@ -17,7 +17,7 @@ export const buildVSDCPayload = (cart, paymentDetails, tin, totalAmount, calcula
   const rceipt = {
     tin: tin,
     bhfId: "00",
-    rcptNo: 0, // Assigned by mock
+    rcptNo: 0, // Assigned by VSDC
     trdt: new Date().toISOString().split('T')[0].replace(/-/g,''),
     trtm: new Date().toISOString().split('T')[1].substring(0,8).replace(/:/g,''),
     rcptTyCd: "S",

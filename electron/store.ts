@@ -10,6 +10,7 @@ import { setupMigrations } from './store/migrations';
 class Store {
   dbPath: string;
   db: any;
+  initPromise: Promise<void>;
 
   constructor(dbPath?: string) {
     // If not running in electron (e.g. tests), app might be undefined or missing getPath
@@ -40,7 +41,7 @@ class Store {
     }
     
     this.db = new Database(this.dbPath);
-    this.init();
+    this.initPromise = this.init();
   }
 
   async init() {

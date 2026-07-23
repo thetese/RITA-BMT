@@ -15,7 +15,9 @@ const defaultProduct = {
   taxTyCd: 'B',
   barcode: '',
   type: 'standard',
-  comboItems: '[]'
+  comboItems: '[]',
+  unit: 'Pcs',
+  expirationDate: ''
 };
 
 export default function ProductsManagement({ categories = [], currentUser, businessType = 'restaurant' }) {
@@ -227,12 +229,14 @@ export default function ProductsManagement({ categories = [], currentUser, busin
         ...form,
         unitPrice: parseFloat(form.unitPrice.toString().replace(/,/g, '')) || 0,
         costPrice: parseFloat(form.costPrice.toString().replace(/,/g, '')) || 0,
-        stockQuantity: parseInt(form.stockQuantity, 10) || 0,
-        lowStockThreshold: parseInt(form.lowStockThreshold, 10) || 5,
+        stockQuantity: parseFloat(form.stockQuantity) || 0,
+        lowStockThreshold: parseFloat(form.lowStockThreshold) || 5,
         taxTyCd: form.taxTyCd || 'B',
         barcode: form.barcode || '',
         type: form.type || 'standard',
-        comboItems: form.comboItems || '[]'
+        comboItems: form.comboItems || '[]',
+        unit: form.unit || 'Pcs',
+        expirationDate: form.expirationDate || ''
       };
       if (editingId) {
         await window.api.updateProduct({ ...payload, id: editingId }, currentUser?.id);
@@ -258,7 +262,9 @@ export default function ProductsManagement({ categories = [], currentUser, busin
       taxTyCd: prod.taxTyCd || 'B',
       barcode: prod.barcode || '',
       type: prod.type || 'standard',
-      comboItems: prod.comboItems || '[]'
+      comboItems: prod.comboItems || '[]',
+      unit: prod.unit || 'Pcs',
+      expirationDate: prod.expirationDate || ''
     });
     setEditingId(prod.id);
   };
@@ -274,7 +280,7 @@ export default function ProductsManagement({ categories = [], currentUser, busin
     e.preventDefault();
     if (!adjustingProduct) return;
     
-    const qty = parseInt(adjustForm.quantity, 10);
+    const qty = parseFloat(adjustForm.quantity);
     if (qty <= 0) {
       showToast("Quantity must be greater than 0", "error");
       return;
@@ -292,11 +298,11 @@ export default function ProductsManagement({ categories = [], currentUser, busin
       
       await window.api.addStockMovement(payload, currentUser?.id);
       
-      // Mock VSDC API call for stock movement
+      // VSDC API call for stock movement
       if (window.api && window.api.getSetting) {
         const tin = await window.api.getSetting('tin') || "999999999";
-        // Dynamic import to avoid messing up regular execution if mock isn't loaded properly
-        import('../utils/vsdcMock').then(module => {
+        // Dynamic import
+        import('../utils/vsdcClient').then(module => {
           module.vsdcApi.saveStockItems({ tin, items: [payload] });
         });
       }
@@ -372,9 +378,10 @@ export default function ProductsManagement({ categories = [], currentUser, busin
           barcode: (row['Barcode'] || '').toString(),
           unitPrice: parseFloat(row['Unit Price']) || 0,
           costPrice: parseFloat(row['Cost Price']) || 0,
-          stockQuantity: parseInt(row['Initial Stock'], 10) || 0,
-          lowStockThreshold: parseInt(row['Low Stock Alert'], 10) || 5,
-          taxTyCd: row['Tax Category (A/B)'] || 'B'
+          stockQuantity: parseFloat(row['Initial Stock']) || 0,
+          lowStockThreshold: parseFloat(row['Low Stock Alert']) || 5,
+          taxTyCd: row['Tax Category (A/B)'] || 'B',
+          unit: row['Unit of Measure'] || 'Pcs'
         };
         await window.api.addProduct(payload, currentUser?.id);
         importedCount++;
@@ -400,13 +407,29 @@ export default function ProductsManagement({ categories = [], currentUser, busin
               <label>Barcode</label>
               <input name="barcode" value={form.barcode} onChange={handleChange} placeholder="Scan or type" />
             </div>
+            <div className="form-row">
+              <label>Expiration Date</label>
+              <input type="date" name="expirationDate" value={form.expirationDate || ''} onChange={handleChange} />
+            </div>
           </div>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '15px' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '15px' }}>
             <div className="form-row">
               <label>Category *</label>
               <input name="category" value={form.category} onChange={handleChange} list="cat-list" required />
               <datalist id="cat-list">
                 {categories.map(c => <option key={c} value={c} />)}
+              </datalist>
+            </div>
+            <div className="form-row">
+              <label>Unit of Measure</label>
+              <input name="unit" value={form.unit || 'Pcs'} onChange={handleChange} list="unit-list" placeholder="e.g. Kg, L, Pcs" />
+              <datalist id="unit-list">
+                <option value="Pcs" />
+                <option value="Kg" />
+                <option value="g" />
+                <option value="L" />
+                <option value="ml" />
+                <option value="Boxes" />
               </datalist>
             </div>
             <div className="form-row">
@@ -434,11 +457,11 @@ export default function ProductsManagement({ categories = [], currentUser, busin
               <>
                 <div className="form-row">
                   <label>Initial Stock</label>
-                  <input name="stockQuantity" type="number" value={form.stockQuantity} onChange={handleChange} placeholder="0" />
+                  <input name="stockQuantity" type="number" step="0.01" value={form.stockQuantity} onChange={handleChange} placeholder="0" />
                 </div>
                 <div className="form-row">
                   <label>Low Stock Threshold</label>
-                  <input name="lowStockThreshold" type="number" value={form.lowStockThreshold} onChange={handleChange} placeholder="5" />
+                  <input name="lowStockThreshold" type="number" step="0.01" value={form.lowStockThreshold} onChange={handleChange} placeholder="5" />
                 </div>
               </>
             )}
@@ -484,7 +507,7 @@ export default function ProductsManagement({ categories = [], currentUser, busin
                 </div>
                 <div>
                   <label style={{ fontSize: '0.8rem' }}>Qty</label>
-                  <input type="number" min="1" value={comboItemForm.quantity} onChange={e => setComboItemForm({...comboItemForm, quantity: e.target.value})} style={{ width: '80px', padding: '8px', borderRadius: '4px', border: '1px solid var(--border-color)' }} />
+                  <input type="number" step="0.01" min="0.01" value={comboItemForm.quantity} onChange={e => setComboItemForm({...comboItemForm, quantity: e.target.value})} style={{ width: '80px', padding: '8px', borderRadius: '4px', border: '1px solid var(--border-color)' }} />
                 </div>
                 <button type="button" onClick={handleAddComboItem} className="btn-secondary" style={{ padding: '8px 16px', height: 'fit-content' }}>Add to Combo</button>
               </div>
@@ -531,6 +554,7 @@ export default function ProductsManagement({ categories = [], currentUser, busin
                 {businessType !== 'service' && <th>Cost Price</th>}
                 <th>Tax Cat</th>
                 {businessType !== 'service' && <th>In Stock</th>}
+                {businessType !== 'service' && <th>Exp. Date</th>}
                 {businessType !== 'service' && <th>Alert Threshold</th>}
                 <th>Actions</th>
               </tr>
@@ -546,12 +570,13 @@ export default function ProductsManagement({ categories = [], currentUser, busin
                   {businessType !== 'service' && (
                     <td>
                       {p.stockQuantity > 0 ? (
-                        p.stockQuantity <= (p.lowStockThreshold || 5) ? <span className="warning">{p.stockQuantity}</span> : <span className="interest">{p.stockQuantity}</span>
+                        p.stockQuantity <= (p.lowStockThreshold || 5) ? <span className="warning">{p.stockQuantity} {p.unit || 'Pcs'}</span> : <span className="interest">{p.stockQuantity} {p.unit || 'Pcs'}</span>
                       ) : (
                         <span className="btn-danger" style={{ padding: '2px 6px', borderRadius: '4px', fontSize: '0.85em' }}>Out of Stock</span>
                       )}
                     </td>
                   )}
+                  {businessType !== 'service' && <td>{p.expirationDate ? new Date(p.expirationDate).toLocaleDateString() : '-'}</td>}
                   {businessType !== 'service' && <td>{p.lowStockThreshold || 5}</td>}
                   <td className="actions">
                     {businessType === 'restaurant' && (
@@ -593,7 +618,7 @@ export default function ProductsManagement({ categories = [], currentUser, busin
               </div>
               <div className="form-row">
                 <label>Quantity</label>
-                <input type="number" value={adjustForm.quantity} onChange={e => setAdjustForm({...adjustForm, quantity: e.target.value})} min="1" required />
+                <input type="number" step="0.01" value={adjustForm.quantity} onChange={e => setAdjustForm({...adjustForm, quantity: e.target.value})} min="0.01" required />
               </div>
               <div className="form-row">
                 <label>Reason / Notes</label>

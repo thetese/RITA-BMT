@@ -6,7 +6,7 @@ describe('Store', () => {
 
   beforeEach(async () => {
     store = new Store(':memory:');
-    await store.init();
+    await store.initPromise;
   });
 
   it('should create a new store instance', () => {
@@ -48,5 +48,36 @@ describe('Store', () => {
 
     const products = store.getProducts();
     expect(products[0].unitPrice).to.equal(20);
+  });
+
+  it('should add, update, and delete a timecard', () => {
+    const tcData = {
+      userId: 'test-user-id',
+      clockIn: new Date().toISOString(),
+      clockOut: new Date(Date.now() + 2 * 60 * 60 * 1000).toISOString(),
+      hourlyRate: 5000,
+      storeId: 'general'
+    };
+
+    const newTc = store.addTimecard(tcData);
+    expect(newTc).to.have.property('id');
+    expect(newTc.userId).to.equal('test-user-id');
+    expect(newTc.hourlyRate).to.equal(5000);
+
+    const timecards = store.getTimecards('general');
+    expect(timecards.length).to.equal(1);
+    expect(timecards[0].hourlyRate).to.equal(5000);
+
+    // Update timecard
+    store.updateTimecard({ ...newTc, hourlyRate: 6000 });
+    const updatedTimecards = store.getTimecards('general');
+    expect(updatedTimecards[0].hourlyRate).to.equal(6000);
+
+    // Delete timecard
+    const deleted = store.deleteTimecard(newTc.id);
+    expect(deleted).to.be.true;
+
+    const remainingTimecards = store.getTimecards('general');
+    expect(remainingTimecards.length).to.equal(0);
   });
 });

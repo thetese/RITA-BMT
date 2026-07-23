@@ -145,7 +145,7 @@ export default function TimeEntries({ currentUser }) {
             })}
             {entries.length === 0 && (
               <tr>
-                <td colSpan="6" style={{ textAlign: 'center', padding: '30px' }}>No time logged yet.</td>
+                <td colSpan={6} style={{ textAlign: 'center', padding: '30px' }}>No time logged yet.</td>
               </tr>
             )}
           </tbody>
@@ -178,7 +178,7 @@ export default function TimeEntries({ currentUser }) {
               
               <div className="form-group">
                 <label>Description of Work</label>
-                <textarea rows="2" required value={formData.description} onChange={e => setFormData({...formData, description: e.target.value})}></textarea>
+                <textarea rows={2} required value={formData.description} onChange={e => setFormData({...formData, description: e.target.value})}></textarea>
               </div>
 
               <div className="form-group" style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>

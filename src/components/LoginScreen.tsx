@@ -159,10 +159,7 @@ export default function LoginScreen({ onLogin }) {
 
     // Success! Update password
     try {
-      await window.api.updateUser({
-        ...recoveryUser,
-        passwordHash: newPassword
-      });
+      await window.api.resetPassword(recoveryUser.username, newPassword, recoveryAnswer);
       showToast("Password has been reset successfully. Please log in.", "success");
       setMode('login');
       setRecoveryUser(null);

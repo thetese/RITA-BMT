@@ -1,3 +1,6 @@
+const dns = require('dns');
+dns.setDefaultResultOrder('ipv4first');
+
 const { app, BrowserWindow, ipcMain } = require('electron');
 const path = require('path');
 const fs = require('fs');
@@ -9,6 +12,7 @@ import { registerSystemControllers } from './controllers/systemController';
 import { registerSalesControllers } from './controllers/salesController';
 import { registerUserControllers } from './controllers/userController';
 import { initPrinterService } from './services/printerService';
+import { SupabaseSyncService } from './services/supabaseSyncService';
 
 // Global error handlers to prevent silent crashes
 process.on('uncaughtException', (error) => {
@@ -87,6 +91,11 @@ function createSingleWindow(displayId, bounds, page, isMain) {
 
 app.commandLine.appendSwitch('autoplay-policy', 'no-user-gesture-required');
 
+const { protocol } = require('electron');
+protocol.registerSchemesAsPrivileged([
+  { scheme: 'rita-plugin', privileges: { bypassCSP: true, supportFetchAPI: true, secure: true, standard: true, corsEnabled: true } }
+]);
+
 app.whenReady().then(() => {
   app.setAppUserModelId('com.rita.salesreports');
   const { session } = require('electron');
@@ -94,7 +103,7 @@ app.whenReady().then(() => {
     callback({
       responseHeaders: {
         ...details.responseHeaders,
-        'Content-Security-Policy': ["default-src 'self' 'unsafe-inline'; connect-src 'self' http://localhost:* ws://localhost:*; img-src 'self' data: blob:;"]
+        'Content-Security-Policy': ["default-src 'self' 'unsafe-inline' rita-plugin:; script-src 'self' 'unsafe-inline' 'unsafe-eval' rita-plugin:; connect-src 'self' http://localhost:* ws://localhost:* rita-plugin:; img-src 'self' data: blob: rita-plugin:;"]
       }
     });
   });
@@ -102,11 +111,19 @@ app.whenReady().then(() => {
   store = new Store();
   reportScheduler = setupReportScheduler(store);
   
+  const supabaseSync = new SupabaseSyncService(store);
+  supabaseSync.start();
+
+  const { PluginService } = require('./services/pluginService');
+  const pluginService = new PluginService(store);
+  pluginService.registerProtocol();
+  pluginService.scanAndRegisterPlugins();
+  
   // Register Controllers
-  registerSystemControllers(ipcMain, store, reportScheduler);
+  registerSystemControllers(ipcMain, store, reportScheduler, pluginService);
   registerSalesControllers(ipcMain, store);
   registerUserControllers(ipcMain, store);
-  initPrinterService(ipcMain);
+  initPrinterService(ipcMain, store);
   
   // Enforce mode from installer if present
   try {
@@ -133,6 +150,17 @@ app.whenReady().then(() => {
       if (!win.isDestroyed()) win.webContents.send(event, data);
     });
   });
+
+  // Initialize EBM Sync Background Worker
+  const { EbmService } = require('./services/ebmService');
+  const ebmService = new EbmService(store);
+  setInterval(async () => {
+    try {
+      await ebmService.syncPendingSales();
+    } catch (e) {
+      console.error("EBM Sync Worker Error:", e);
+    }
+  }, 60000); // 1 minute interval
 
   // Load third-party Plugins
   try {
@@ -178,6 +206,23 @@ ipcMain.handle('print:getPrinters', async (event) => {
 });
 
 ipcMain.handle('print:receipt', async (event, htmlContent, printerName) => {
+  const jobId = 'job_' + Date.now() + '_' + Math.random().toString(36).substring(2, 7);
+  
+  // Log queue status
+  try {
+    if (store && store.db) {
+      const tableCheck = store.db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='printer_jobs'").get();
+      if (tableCheck) {
+        store.db.prepare(`
+          INSERT INTO printer_jobs (id, printerName, type, status, createdAt, data)
+          VALUES (?, ?, ?, 'printing', datetime('now'), ?)
+        `).run(jobId, printerName || 'Default Printer', 'Receipt', JSON.stringify({ htmlLength: htmlContent.length }));
+      }
+    }
+  } catch (e) {
+    console.error('Error queuing print job in main.ts:', e);
+  }
+
   const printWindow = new BrowserWindow({
     show: false,
     webPreferences: {
@@ -207,13 +252,43 @@ ipcMain.handle('print:receipt', async (event, htmlContent, printerName) => {
         if (filePath) {
           fs.writeFileSync(filePath, data);
           printWindow.close();
+          
+          // Log completion
+          try {
+            if (store && store.db) {
+              store.db.prepare(`
+                UPDATE printer_jobs SET status = 'completed', completedAt = datetime('now') WHERE id = ?
+              `).run(jobId);
+            }
+          } catch (e) {}
+
           resolve({ success: true });
         } else {
           printWindow.close();
+
+          // Log cancellation
+          try {
+            if (store && store.db) {
+              store.db.prepare(`
+                UPDATE printer_jobs SET status = 'failed', completedAt = datetime('now'), error = 'Cancelled by user' WHERE id = ?
+              `).run(jobId);
+            }
+          } catch (e) {}
+
           resolve({ success: false, errorType: 'cancelled' });
         }
       } catch (err: any) {
         printWindow.close();
+
+        // Log failure
+        try {
+          if (store && store.db) {
+            store.db.prepare(`
+              UPDATE printer_jobs SET status = 'failed', completedAt = datetime('now'), error = ? WHERE id = ?
+            `).run(err.message, jobId);
+          }
+        } catch (e) {}
+
         resolve({ success: false, errorType: err.message });
       }
       return;
@@ -222,6 +297,20 @@ ipcMain.handle('print:receipt', async (event, htmlContent, printerName) => {
     // Normal thermal/hardware printer logic
     printWindow.webContents.print({ silent: true, deviceName: printerName }, (success, errorType) => {
       printWindow.close();
+      
+      // Update job status in database
+      try {
+        if (store && store.db) {
+          const status = success ? 'completed' : 'failed';
+          const errorMsg = success ? null : (errorType || 'Unknown error');
+          store.db.prepare(`
+            UPDATE printer_jobs SET status = ?, completedAt = datetime('now'), error = ? WHERE id = ?
+          `).run(status, errorMsg, jobId);
+        }
+      } catch (e) {
+        console.error('Error updating print job status in main.ts:', e);
+      }
+
       resolve({ success, errorType });
     });
   });

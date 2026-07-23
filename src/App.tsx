@@ -17,6 +17,7 @@ import TablesManagement from './components/TablesManagement';
 import Settings from './components/Settings';
 import RestaurantPOS from './components/RestaurantPOS';
 import RetailPOS from './components/RetailPOS';
+import ServicePOS from './components/ServicePOS';
 import ReceiptsHistory from './components/ReceiptsHistory';
 import KDS from './components/KDS';
 import EmployeeTimecards from './components/EmployeeTimecards';
@@ -31,6 +32,8 @@ import ClientPortal from './components/ClientPortal';
 import WorkerDashboard from './components/WorkerDashboard';
 import ManagementDashboard from './components/ManagementDashboard';
 import AppSwitcher from './components/AppSwitcher';
+import PluginLoader from './components/PluginLoader';
+import ErrorBoundary from './components/ErrorBoundary';
 import { 
   Bell, LayoutDashboard, TerminalSquare, MonitorPlay, CalendarDays, 
   ListOrdered, ReceiptText, PackageSearch, Wheat, Truck, 
@@ -60,8 +63,10 @@ function InnerApp() {
   const [page, setPage] = useState('dashboard');
   const [selectedProjectId, setSelectedProjectId] = useState(null);
   const businessType = import.meta.env.VITE_APP_TYPE || 'retail';
-  const [currentModule, setCurrentModule] = useState(null);
-  const effectiveType = businessType === 'general' ? currentModule : businessType;
+  const [currentModule, setCurrentModule] = useState<any>(null);
+  
+  const moduleId = currentModule ? (currentModule.id ? currentModule.id.replace('rita-plugin-', '') : currentModule) : null;
+  const effectiveType = businessType === 'general' ? moduleId : businessType;
 
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   const [editingSale, setEditingSale] = useState(null);
@@ -102,14 +107,18 @@ function InnerApp() {
 
   useEffect(() => {
     if (businessType === 'general' && currentModule) {
-      if (currentModule === 'service') setPage('crm');
-      else if (currentModule === 'retail' || currentModule === 'restaurant') setPage('dashboard');
-      else if (currentModule === 'projects') setPage('management_dash');
-      else if (currentModule === 'inventory') setPage('products');
-      else if (currentModule === 'hr') setPage('users');
-      else if (currentModule === 'finance') setPage('reports');
+      if (currentModule.entry_file) {
+        setPage('plugin');
+      } else {
+        if (moduleId === 'service') setPage('crm');
+        else if (moduleId === 'retail' || moduleId === 'restaurant') setPage('dashboard');
+        else if (moduleId === 'projects') setPage('management_dash');
+        else if (moduleId === 'inventory') setPage('plugin');
+        else if (moduleId === 'hr') setPage('plugin');
+        else if (moduleId === 'finance') setPage('plugin');
+      }
     }
-  }, [currentModule, businessType]);
+  }, [currentModule, businessType, moduleId]);
 
 
 
@@ -152,28 +161,30 @@ function InnerApp() {
   let navGroups = [];
 
   if (businessType === 'general') {
-    if (currentModule === 'retail' || currentModule === 'restaurant') {
+    if (moduleId === 'retail' || moduleId === 'restaurant') {
       navGroups.push({
-        group: currentModule === 'retail' ? 'Retail POS' : 'Restaurant POS',
+        group: moduleId === 'retail' ? 'Retail POS' : 'Restaurant POS',
         items: [
           { key: 'dashboard', label: 'Dashboard', icon: <LayoutDashboard size={18} />, adminOnly: true },
-          { key: 'pos', label: 'POS Terminal', icon: <TerminalSquare size={18} />, adminOnly: false },
-          ...(currentModule === 'restaurant' ? [{ key: 'kitchen', label: 'Kitchen Display', icon: <MonitorPlay size={18} />, adminOnly: false }] : []),
+          { key: 'plugin', label: 'POS Terminal', icon: <TerminalSquare size={18} />, adminOnly: false },
+          { key: 'kiosk', label: 'Kiosk Mode', icon: <MonitorPlay size={18} />, adminOnly: true },
+          ...(moduleId === 'restaurant' ? [{ key: 'kitchen', label: 'Kitchen Display', icon: <MonitorPlay size={18} />, adminOnly: false }] : []),
           { key: 'grid', label: 'Daily Grid', icon: <CalendarDays size={18} />, adminOnly: false },
           { key: 'sales', label: 'Sales List', icon: <ListOrdered size={18} />, adminOnly: true },
           { key: 'receipts', label: 'Receipts & Refunds', icon: <ReceiptText size={18} />, adminOnly: true }
         ]
       });
-    } else if (currentModule === 'service') {
+    } else if (moduleId === 'service') {
       navGroups.push({
         group: 'Service CRM',
         items: [
           { key: 'crm', label: 'CRM & Pipeline', icon: <Target size={18} />, adminOnly: true },
           { key: 'appointments', label: 'Appointments', icon: <CalendarDays size={18} />, adminOnly: false },
-          { key: 'invoices', label: 'Invoice Maker', icon: <FileText size={18} />, adminOnly: false }
+          { key: 'invoices', label: 'Invoice Maker', icon: <FileText size={18} />, adminOnly: false },
+          { key: 'pos', label: 'Service Terminal', icon: <TerminalSquare size={18} />, adminOnly: false }
         ]
       });
-    } else if (currentModule === 'projects') {
+    } else if (moduleId === 'projects') {
       navGroups.push({
         group: 'Projects & Tasks',
         items: [
@@ -181,34 +192,44 @@ function InnerApp() {
           { key: 'worker_dash', label: 'My Action Feed', icon: <CheckSquare size={18} />, adminOnly: false },
           { key: 'projects', label: 'Projects', icon: <Briefcase size={18} />, adminOnly: true },
           { key: 'tasks', label: 'My Tasks', icon: <CheckSquare size={18} />, adminOnly: false },
-          { key: 'time', label: 'Time Logs', icon: <Timer size={18} />, adminOnly: false }
+          { key: 'time', label: 'Time Logs', icon: <Timer size={18} />, adminOnly: false },
+          { key: 'plugin', label: 'Tasks Dashboard', icon: <CheckSquare size={18} />, adminOnly: false }
         ]
       });
-    } else if (currentModule === 'inventory') {
+    } else if (moduleId === 'inventory') {
       navGroups.push({
         group: 'Inventory',
         items: [
-          { key: 'products', label: 'Products & Services', icon: <PackageSearch size={18} />, adminOnly: true },
+          { key: 'plugin', label: 'Products & Services', icon: <PackageSearch size={18} />, adminOnly: true },
           { key: 'ingredients', label: 'Raw Ingredients', icon: <Wheat size={18} />, adminOnly: true },
           { key: 'suppliers', label: 'Suppliers & POs', icon: <Truck size={18} />, adminOnly: true }
         ]
       });
-    } else if (currentModule === 'hr') {
+    } else if (moduleId === 'hr') {
       navGroups.push({
         group: 'People & HR',
         items: [
           { key: 'customers', label: 'Customers', icon: <Users size={18} />, adminOnly: false },
           { key: 'team', label: 'Team', icon: <UserCircle size={18} />, adminOnly: true },
           { key: 'timecards', label: 'Timecards', icon: <Clock size={18} />, adminOnly: false },
-          { key: 'users', label: 'System Users', icon: <Shield size={18} />, adminOnly: true }
+          { key: 'plugin', label: 'System Users', icon: <Shield size={18} />, adminOnly: true }
         ]
       });
-    } else if (currentModule === 'finance') {
+    } else if (moduleId === 'finance') {
       navGroups.push({
         group: 'Finance',
         items: [
-          { key: 'expenses', label: 'Expenses', icon: <Receipt size={18} />, adminOnly: true },
+          { key: 'plugin', label: 'Expenses', icon: <Receipt size={18} />, adminOnly: true },
           { key: 'reports', label: 'Reports', icon: <LineChart size={18} />, adminOnly: true }
+        ]
+      });
+    }
+    
+    if (currentModule && !['retail', 'restaurant', 'service', 'projects', 'inventory', 'hr', 'finance'].includes(moduleId)) {
+      navGroups.push({
+        group: currentModule.name || 'Plugin',
+        items: [
+          { key: 'plugin', label: 'Dashboard', icon: <TerminalSquare size={18} />, adminOnly: false }
         ]
       });
     }
@@ -217,7 +238,7 @@ function InnerApp() {
       navGroups.push({
         group: 'System',
         items: [
-          ...(currentModule === 'restaurant' ? [{ key: 'tables', label: 'Table Config', icon: <Table size={18} />, adminOnly: true }] : []),
+          ...(moduleId === 'restaurant' ? [{ key: 'tables', label: 'Table Config', icon: <Table size={18} />, adminOnly: true }] : []),
           { key: 'settings', label: 'Settings', icon: <Settings2 size={18} />, adminOnly: true },
         ]
       });
@@ -239,6 +260,7 @@ function InnerApp() {
           ] : [
             { key: 'dashboard', label: 'Dashboard', icon: <LayoutDashboard size={18} />, adminOnly: true },
             { key: 'pos', label: 'POS Terminal', icon: <TerminalSquare size={18} />, adminOnly: false },
+            { key: 'kiosk', label: 'Kiosk Mode', icon: <MonitorPlay size={18} />, adminOnly: true },
             ...(businessType === 'restaurant' ? [{ key: 'kitchen', label: 'Kitchen Display', icon: <MonitorPlay size={18} />, adminOnly: false }] : []),
             { key: 'grid', label: 'Daily Grid', icon: <CalendarDays size={18} />, adminOnly: false },
             { key: 'sales', label: 'Sales List', icon: <ListOrdered size={18} />, adminOnly: true },
@@ -274,9 +296,7 @@ function InnerApp() {
         group: 'Finance',
         items: [
           { key: 'expenses', label: 'Expenses', icon: <Receipt size={18} />, adminOnly: true },
-          ...(businessType !== 'service' ? [
-            { key: 'reports', label: 'Reports', icon: <LineChart size={18} />, adminOnly: true },
-          ] : [])
+          { key: 'reports', label: 'Reports', icon: <LineChart size={18} />, adminOnly: true }
         ]
       },
       {
@@ -320,7 +340,7 @@ function InnerApp() {
       )}
 
       {/* Sidebar */}
-      {!isSecondary && !(businessType === 'general' && !currentModule) && (() => {
+      {!isSecondary && !(businessType === 'general' && !currentModule) && page !== 'kiosk' && (() => {
         const sidebarGradients: Record<string, string> = {
           retail: 'linear-gradient(180deg, #064e3b 0%, #047857 50%, #059669 100%)',
           restaurant: 'linear-gradient(180deg, #451a03 0%, #6b2f0a 50%, #78350f 100%)',
@@ -330,7 +350,9 @@ function InnerApp() {
           hr: 'linear-gradient(180deg, #1e3a8a 0%, #1e40af 50%, #3b82f6 100%)',
           finance: 'linear-gradient(180deg, #4c0519 0%, #6b0f2a 50%, #881337 100%)',
         };
-        const sidebarBg = currentModule && sidebarGradients[currentModule] ? sidebarGradients[currentModule] : undefined;
+        const sidebarBg = moduleId && sidebarGradients[moduleId] 
+          ? sidebarGradients[moduleId] 
+          : (currentModule && currentModule.gradient ? currentModule.gradient : undefined);
         return (
         <div 
           className={`app-sidebar ${isSidebarCollapsed ? 'collapsed' : ''}`}
@@ -417,7 +439,10 @@ function InnerApp() {
             {page === 'pos' && effectiveType === 'restaurant' && (
               <RestaurantPOS currentUser={currentUser} categories={categories} sales={sales} onSave={loadAllData} />
             )}
-            {page === 'pos' && effectiveType !== 'restaurant' && (
+            {page === 'pos' && effectiveType === 'service' && (
+              <ServicePOS currentUser={currentUser} categories={categories} sales={sales} onSave={loadAllData} />
+            )}
+            {page === 'pos' && effectiveType !== 'restaurant' && effectiveType !== 'service' && (
               <RetailPOS currentUser={currentUser} categories={categories} sales={sales} onSave={loadAllData} />
             )}
             {page === 'grid' && effectiveType !== 'service' && (
@@ -504,6 +529,22 @@ function InnerApp() {
         {page === 'settings' && (
           <Settings theme={theme} toggleTheme={toggleTheme} />
         )}
+        {page === 'plugin' && currentModule?.entry_file && (
+          <ErrorBoundary fallback={<div style={{padding: '20px', color: 'red'}}><h3>Plugin Crashed</h3><p>A fatal error occurred within this plugin.</p><button onClick={() => setPage('dashboard')}>Return to Dashboard</button></div>}>
+            <PluginLoader 
+              moduleUrl={currentModule.entry_file} 
+              onClose={() => setPage('dashboard')} 
+              appProps={{
+                currentUser,
+                theme,
+                toggleTheme,
+                categories,
+                sales: filteredSales,
+                onSave: addSale
+              }}
+            />
+          </ErrorBoundary>
+        )}
           </>
         )}
       </main>
@@ -556,17 +597,21 @@ function InnerApp() {
           </div>
         </div>
       )}
-      {businessType === 'restaurant' && page !== 'kitchen' && <FoodReadyAlerts />}
+      {(businessType === 'restaurant' || businessType === 'general') && page !== 'kitchen' && <FoodReadyAlerts />}
       </div>
   );
 }
 
+import { StoreProvider } from './context/StoreContext';
+
 export default function App() {
   return (
-    <ToastProvider>
-      <ConfirmProvider>
-        <InnerApp />
-      </ConfirmProvider>
-    </ToastProvider>
+    <StoreProvider>
+      <ToastProvider>
+        <ConfirmProvider>
+          <InnerApp />
+        </ConfirmProvider>
+      </ToastProvider>
+    </StoreProvider>
   );
 }

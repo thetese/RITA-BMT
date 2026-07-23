@@ -3,6 +3,7 @@
 import React, { useState, useEffect } from 'react';
 import { useConfirm } from './ui/Confirm';
 import { useToast } from './ui/Toast';
+import StoreManager from './StoreManager';
 import DisplayManager from './DisplayManager';
 
 export default function Settings({ theme, toggleTheme }) {
@@ -16,7 +17,12 @@ export default function Settings({ theme, toggleTheme }) {
     tin: '',
     businessName: '',
     businessAddress: '',
-    businessPhone: ''
+    businessPhone: '',
+    ebmUrl: '',
+    cmcKey: '',
+    supabaseUrl: '',
+    supabaseAnonKey: '',
+    storeId: 'default-store-id'
   });
 
   useEffect(() => {
@@ -35,8 +41,13 @@ export default function Settings({ theme, toggleTheme }) {
           const stripeSecretKey = await window.api.getSetting('stripeSecretKey') || '';
           const stripePublishableKey = await window.api.getSetting('stripePublishableKey') || '';
           const receiptPrinter = await window.api.getSetting('receiptPrinter') || '';
+          const ebmUrl = await window.api.getSetting('ebmUrl') || 'http://localhost:8080';
+          const cmcKey = await window.api.getSetting('cmcKey') || '';
+          const supabaseUrl = await window.api.getSetting('supabaseUrl') || '';
+          const supabaseAnonKey = await window.api.getSetting('supabaseAnonKey') || '';
+          const storeId = await window.api.getSetting('storeId') || 'default-store-id';
           
-          setCompanyDetails({ tin, businessName, businessAddress, businessPhone, stripeSecretKey, stripePublishableKey, receiptPrinter });
+          setCompanyDetails({ tin, businessName, businessAddress, businessPhone, stripeSecretKey, stripePublishableKey, receiptPrinter, ebmUrl, cmcKey, supabaseUrl, supabaseAnonKey, storeId });
         } catch (e) {
           console.error("Error fetching settings", e);
         }
@@ -76,6 +87,23 @@ export default function Settings({ theme, toggleTheme }) {
     setTimeout(() => setMessage(''), 3000);
   };
 
+  const handlePingEbm = async () => {
+    setMessage('Pinging VSDC...');
+    try {
+      if (window.api && window.api.pingEbm) {
+        const result = await window.api.pingEbm();
+        if (result.success) {
+          setMessage(`EBM Connected! Version: ${result.data?.systemVersion || 'Unknown'}`);
+        } else {
+          setMessage(`EBM Error: ${result.error}`);
+        }
+      }
+    } catch (e) {
+      setMessage(`EBM Error: ${e.message}`);
+    }
+    setTimeout(() => setMessage(''), 4000);
+  };
+
   const handleRestore = async () => {
     if (!await askConfirm('WARNING: Restoring will overwrite all current data. Are you sure?')) return;
     setMessage('Restoring...');
@@ -105,7 +133,9 @@ export default function Settings({ theme, toggleTheme }) {
         </button>
       </div>
 
+      <hr style={{ border: 'none', borderTop: '1px solid var(--border-color)', margin: '20px 0' }} />
 
+      <StoreManager />
 
       <hr style={{ border: 'none', borderTop: '1px solid var(--border-color)', margin: '20px 0' }} />
 
@@ -136,6 +166,16 @@ export default function Settings({ theme, toggleTheme }) {
             />
           </div>
           <div>
+            <label style={{ display: 'block', marginBottom: '5px' }}>Store Code (Cloud ID) *</label>
+            <input 
+              type="text" name="storeId"
+              value={companyDetails.storeId} onChange={handleCompanyChange} 
+              placeholder="e.g. MAIN-STORE"
+              style={{ padding: '8px', borderRadius: '4px', border: '1px solid var(--border-color)', width: '100%' }} 
+            />
+            <small style={{ color: 'var(--text-secondary)' }}>Used to separate your data from other stores in the cloud web portal.</small>
+          </div>
+          <div>
             <label style={{ display: 'block', marginBottom: '5px' }}>TIN Number *</label>
             <input 
               type="text" name="tin"
@@ -163,6 +203,41 @@ export default function Settings({ theme, toggleTheme }) {
       </div>
 
       <hr style={{ border: 'none', borderTop: '1px solid var(--border-color)', margin: '20px 0' }} />
+
+      <div style={{ marginBottom: '30px' }}>
+        <h3>RRA EBM Integration</h3>
+        <p style={{ color: 'var(--text-secondary)', marginBottom: '12px' }}>Configure the local VSDC for EBM version 2.1 compliance.</p>
+        
+        <div style={{ display: 'grid', gap: '15px' }}>
+          <div>
+            <label style={{ display: 'block', marginBottom: '5px' }}>Local VSDC URL</label>
+            <input 
+              type="text" name="ebmUrl"
+              value={companyDetails.ebmUrl || ''} onChange={handleCompanyChange} 
+              placeholder="http://localhost:8080"
+              style={{ padding: '8px', borderRadius: '4px', border: '1px solid var(--border-color)', width: '100%' }} 
+            />
+            <small style={{ color: 'var(--text-secondary)' }}>Leave blank to disable EBM sync.</small>
+          </div>
+          <div>
+            <label style={{ display: 'block', marginBottom: '5px' }}>Communication Key (cmcKey)</label>
+            <input 
+              type="password" name="cmcKey"
+              value={companyDetails.cmcKey || ''} onChange={handleCompanyChange} 
+              placeholder="Enter your EBM CMC Key"
+              style={{ padding: '8px', borderRadius: '4px', border: '1px solid var(--border-color)', width: '100%' }} 
+            />
+            <small style={{ color: 'var(--text-secondary)' }}>Required for VSDC API authentication.</small>
+          </div>
+          <div>
+            <button className="btn-secondary" onClick={handlePingEbm}>Ping VSDC</button>
+          </div>
+        </div>
+      </div>
+
+      <hr style={{ border: 'none', borderTop: '1px solid var(--border-color)', margin: '20px 0' }} />
+
+
 
       <div style={{ marginBottom: '30px' }}>
         <h3>Stripe Payment Integration</h3>

@@ -1,5 +1,10 @@
 import React from 'react';
 import ReactDOM from 'react-dom/client';
+
+// Expose React for dynamically loaded plugins
+(window as any).React = React;
+(window as any).ReactDOM = ReactDOM;
+
 import App from './App';
 import './styles/App.css';
 

@@ -32,6 +32,7 @@ export default function usePOSCart(products) {
           taxTyCd: product.taxTyCd || 'B',
           itemCd: product.itemCd,
           itemClsCd: product.itemClsCd,
+          unit: product.unit || 'Pcs',
           quantity: quantityToUse,
           discount: '',
           status: 'pending'
@@ -47,6 +48,23 @@ export default function usePOSCart(products) {
         if (item.productId === productId) {
           const newQ = item.quantity + delta;
           const product = products.find(p => p.id === productId);
+          if (!isService && product && newQ > product.stockQuantity) {
+            return item; 
+          }
+          return { ...item, quantity: newQ > 0 ? newQ : 0 };
+        }
+        return item;
+      }).filter(item => item.quantity > 0);
+    });
+  };
+
+  const setQuantity = (productId, qty) => {
+    const isService = import.meta.env.VITE_APP_TYPE === 'service';
+    setCart(prev => {
+      return prev.map(item => {
+        if (item.productId === productId) {
+          const newQ = parseFloat(qty) || 0;
+          const product = products.find(p => p.id === item.originalProductId || p.id === item.productId);
           if (!isService && product && newQ > product.stockQuantity) {
             return item; 
           }
@@ -87,6 +105,7 @@ export default function usePOSCart(products) {
     setCart,
     addToCart,
     updateQuantity,
+    setQuantity,
     updateDiscount,
     calculateItemDiscount,
     totalAmount,

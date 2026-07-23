@@ -5,7 +5,7 @@ import {
 } from 'lucide-react';
 import { v4 as uuidv4 } from 'uuid';
 import { generateThermalReceiptHTML, generateProformaHTML } from '../utils/receiptGenerator';
-import { vsdcApi } from '../utils/vsdcMock';
+import { vsdcApi } from '../utils/vsdcClient';
 import ShiftManager from './ShiftManager';
 
 export default function RestaurantPOS({ currentUser, categories = [], sales = [], onSave }) {
@@ -31,8 +31,10 @@ export default function RestaurantPOS({ currentUser, categories = [], sales = []
   const [showHeldModal, setShowHeldModal] = useState(false);
 
   const [showPaymentModal, setShowPaymentModal] = useState(false);
-  const [paymentDetails, setPaymentDetails] = useState({ Cash: 0, Card: 0, Momo: 0 });
+  const [paymentDetails, setPaymentDetails] = useState({ Cash: 0, Card: 0, Momo: 0, Room: 0 });
   const [payActiveField, setPayActiveField] = useState('Cash');
+  const [chargeRoomId, setChargeRoomId] = useState('');
+  const [hotelRooms, setHotelRooms] = useState([]);
 
   const [showTableModal, setShowTableModal] = useState(false);
   const [tableNameInput, setTableNameInput] = useState('');
@@ -58,6 +60,10 @@ export default function RestaurantPOS({ currentUser, categories = [], sales = []
       setCrmCustomers(cData);
       const tData = await window.api.getTables();
       setTables(tData);
+      if (window.api.hotelGetRooms) {
+        const rData = await window.api.hotelGetRooms();
+        setHotelRooms(rData.filter((r: any) => r.status === 'Occupied'));
+      }
       if (currentUser?.id) {
         const shift = await window.api.getActiveShift(currentUser.id);
         setActiveShift(shift);
@@ -166,7 +172,7 @@ export default function RestaurantPOS({ currentUser, categories = [], sales = []
   };
 
   if (currentUser?.id && !activeShift) {
-    return <ShiftManager mode="open" onSubmit={handleOpenShift} />;
+    return <ShiftManager mode="open" onSubmit={handleOpenShift} onCancel={() => {}} shift={null} />;
   }
 
   if (shiftMode === 'close' && activeShift) {
@@ -202,6 +208,7 @@ export default function RestaurantPOS({ currentUser, categories = [], sales = []
           taxTyCd: product.taxTyCd || 'B',
           itemCd: product.itemCd,
           itemClsCd: product.itemClsCd,
+          unit: product.unit || 'Pcs',
           quantity: quantityToUse,
           discount: '',
           status: 'pending'
@@ -218,6 +225,22 @@ export default function RestaurantPOS({ currentUser, categories = [], sales = []
           const product = products.find(p => p.id === productId);
           if (product && newQ > product.stockQuantity) {
             return item; // Cannot exceed stock
+          }
+          return { ...item, quantity: newQ > 0 ? newQ : 0 };
+        }
+        return item;
+      }).filter(item => item.quantity > 0);
+    });
+  };
+
+  const setQuantity = (productId, qty) => {
+    setCart(prev => {
+      return prev.map(item => {
+        if (item.productId === productId) {
+          const newQ = parseFloat(qty) || 0;
+          const product = products.find(p => p.id === item.originalProductId || p.id === item.productId);
+          if (product && newQ > product.stockQuantity) {
+            return item; 
           }
           return { ...item, quantity: newQ > 0 ? newQ : 0 };
         }
@@ -361,7 +384,7 @@ export default function RestaurantPOS({ currentUser, categories = [], sales = []
   };
 
   const totalAmount = cart.reduce((sum, item) => sum + ((item.quantity * item.unitPrice) - calculateItemDiscount(item)), 0);
-  const totalPaid = (parseFloat(paymentDetails.Cash) || 0) + (parseFloat(paymentDetails.Card) || 0) + (parseFloat(paymentDetails.Momo) || 0);
+  const totalPaid = (Number(paymentDetails.Cash) || 0) + (Number(paymentDetails.Card) || 0) + (Number(paymentDetails.Momo) || 0) + (Number(paymentDetails.Room) || 0);
   const finalTotalAmount = Math.max(0, totalAmount - (redeemPoints * 10));
   const changeDue = totalPaid - finalTotalAmount;
 
@@ -481,11 +504,12 @@ export default function RestaurantPOS({ currentUser, categories = [], sales = []
           customerName: selectedCustomer ? crmCustomers.find(c => c.id === selectedCustomer)?.name : '',
           customerId: selectedCustomer || null,
           notes: notes,
-          paymentMethod: paymentDetails.Cash >= paymentDetails.Card && paymentDetails.Cash >= paymentDetails.Momo ? 'Cash' : paymentDetails.Card >= paymentDetails.Momo ? 'Card' : 'Mobile Money',
+          paymentMethod: paymentDetails.Cash >= paymentDetails.Card && paymentDetails.Cash >= paymentDetails.Momo && paymentDetails.Cash >= paymentDetails.Room ? 'Cash' : paymentDetails.Card >= paymentDetails.Momo && paymentDetails.Card >= paymentDetails.Room ? 'Card' : paymentDetails.Room >= paymentDetails.Momo ? 'Room Charge' : 'Mobile Money',
           paymentDetails: JSON.stringify({
-            Cash: parseFloat(paymentDetails.Cash) || 0,
-            Card: parseFloat(paymentDetails.Card) || 0,
-            "Mobile Money": parseFloat(paymentDetails.Momo) || 0
+            Cash: Number(paymentDetails.Cash) || 0,
+            Card: Number(paymentDetails.Card) || 0,
+            "Mobile Money": Number(paymentDetails.Momo) || 0,
+            "Room Charge": Number(paymentDetails.Room) || 0
           }),
           discountAmount: dcAmt,
           discountRate: dcRt,
@@ -529,11 +553,16 @@ export default function RestaurantPOS({ currentUser, categories = [], sales = []
           taxAmtB
         },
         {
-          Cash: parseFloat(paymentDetails.Cash) || 0,
-          Card: parseFloat(paymentDetails.Card) || 0,
-          "Mobile Money": parseFloat(paymentDetails.Momo) || 0
+          Cash: Number(paymentDetails.Cash) || 0,
+          Card: Number(paymentDetails.Card) || 0,
+          "Mobile Money": Number(paymentDetails.Momo) || 0,
+          "Room Charge": Number(paymentDetails.Room) || 0
         }
       );
+      
+      if (Number(paymentDetails.Room) > 0 && chargeRoomId && window.api.hotelAddChargeToRoom) {
+        await window.api.hotelAddChargeToRoom(chargeRoomId, Number(paymentDetails.Room));
+      }
 
       // 3. Print
       const printerName = await window.api.getSetting('receiptPrinter');
@@ -553,7 +582,8 @@ export default function RestaurantPOS({ currentUser, categories = [], sales = []
       setCustomerName('');
       setNotes('');
       setPaymentMethod('Cash');
-      setPaymentDetails({ Cash: 0, Card: 0, Momo: 0 });
+      setPaymentDetails({ Cash: 0, Card: 0, Momo: 0, Room: 0 });
+      setChargeRoomId('');
       setShowPaymentModal(false);
       setActiveOrderId(null);
       setActiveOrderName('');
@@ -641,8 +671,8 @@ export default function RestaurantPOS({ currentUser, categories = [], sales = []
 
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '30px' }}>
           {/* Open Orders */}
-          <div style={{ background: '#fff', padding: '20px', borderRadius: '12px', boxShadow: '0 4px 12px rgba(0,0,0,0.05)' }}>
-            <h2 style={{ borderBottom: '2px solid var(--border-color)', paddingBottom: '10px' }}>Your Open Tables</h2>
+          <div style={{ background: 'var(--card-bg)', padding: '20px', borderRadius: '12px', boxShadow: '0 4px 12px rgba(0,0,0,0.05)' }}>
+            <h2 style={{ borderBottom: '2px solid var(--border-color)', paddingBottom: '10px' }}>Your Open Tables (Updated)</h2>
             <div style={{ marginTop: '15px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
               {myOpenOrders.length === 0 ? (
                 <div style={{ color: 'var(--text-secondary)' }}>No open tables.</div>
@@ -666,7 +696,7 @@ export default function RestaurantPOS({ currentUser, categories = [], sales = []
           </div>
 
           {/* Closed Orders */}
-          <div style={{ background: '#fff', padding: '20px', borderRadius: '12px', boxShadow: '0 4px 12px rgba(0,0,0,0.05)' }}>
+          <div style={{ background: 'var(--card-bg)', padding: '20px', borderRadius: '12px', boxShadow: '0 4px 12px rgba(0,0,0,0.05)' }}>
             <h2 style={{ borderBottom: '2px solid var(--border-color)', paddingBottom: '10px' }}>Your Closed Sales (Today)</h2>
             <div style={{ marginTop: '15px', display: 'flex', flexDirection: 'column', gap: '10px', maxHeight: '400px', overflowY: 'auto' }}>
               {myClosedOrders.length === 0 ? (
@@ -785,7 +815,14 @@ export default function RestaurantPOS({ currentUser, categories = [], sales = []
                   
                   <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
                     <button onClick={() => updateQuantity(item.productId, -1)} className="pos-qty-btn">-</button>
-                    <span style={{ fontWeight: 'bold', width: '20px', textAlign: 'center', fontSize: '1.1rem' }}>{item.quantity}</span>
+                    <input 
+                      type="number" 
+                      step="0.01" 
+                      value={item.quantity} 
+                      onChange={(e) => setQuantity(item.productId, e.target.value)} 
+                      style={{ width: '50px', textAlign: 'center', border: 'none', background: 'transparent', fontWeight: 'bold', fontSize: '1.1rem' }} 
+                    />
+                    {item.unit && item.unit !== 'Pcs' && <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>{item.unit}</span>}
                     <button onClick={() => updateQuantity(item.productId, 1)} className="pos-qty-btn plus">+</button>
                   </div>
                 </div>
@@ -882,7 +919,7 @@ export default function RestaurantPOS({ currentUser, categories = [], sales = []
               className="pos-checkout-btn" 
               style={{ flex: '1' }}
               onClick={() => {
-                setPaymentDetails({ Cash: 0, Card: 0, Momo: 0 });
+                setPaymentDetails({ Cash: 0, Card: 0, Momo: 0, Room: 0 });
                 setShowPaymentModal(true);
               }}
               disabled={cart.length === 0}
@@ -952,10 +989,18 @@ export default function RestaurantPOS({ currentUser, categories = [], sales = []
 
             <div style={{ display: 'flex', gap: '16px', marginBottom: '16px' }}>
               <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                {[{key:'Cash',label:'Cash (FRW)'},{key:'Card',label:'Card (FRW)'},{key:'Momo',label:'MoMo (FRW)'}].map(f => (
-                  <div key={f.key} onClick={() => setPayActiveField(f.key)} style={{ display:'flex', justifyContent:'space-between', alignItems:'center', padding:'10px 12px', borderRadius:'8px', cursor:'pointer', border: payActiveField === f.key ? '2px solid var(--primary)' : '1px solid var(--border-color)', background: payActiveField === f.key ? 'rgba(79,70,229,0.04)' : 'transparent', transition:'all 0.15s ease' }}>
-                    <label style={{ fontWeight:'600', fontSize:'0.9rem', color: payActiveField === f.key ? 'var(--primary)' : 'var(--text-primary)' }}>{f.label}</label>
-                    <input type="number" min="0" value={paymentDetails[f.key]} onChange={e => setPaymentDetails({...paymentDetails, [f.key]: e.target.value})} onFocus={() => setPayActiveField(f.key)} style={{ padding:'8px', borderRadius:'6px', border:'1px solid var(--border-color)', width:'120px', textAlign:'right', fontWeight:'bold', fontSize:'1.1rem' }} />
+                {[{key:'Cash',label:'Cash (FRW)'},{key:'Card',label:'Card (FRW)'},{key:'Momo',label:'MoMo (FRW)'},{key:'Room',label:'Room Charge'}].map(f => (
+                  <div key={f.key} onClick={() => setPayActiveField(f.key)} style={{ display:'flex', flexDirection: 'column', padding:'10px 12px', borderRadius:'8px', cursor:'pointer', border: payActiveField === f.key ? '2px solid var(--primary)' : '1px solid var(--border-color)', background: payActiveField === f.key ? 'rgba(79,70,229,0.04)' : 'transparent', transition:'all 0.15s ease' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <label style={{ fontWeight:'600', fontSize:'0.9rem', color: payActiveField === f.key ? 'var(--primary)' : 'var(--text-primary)' }}>{f.label}</label>
+                      <input type="number" min="0" value={paymentDetails[f.key] || ''} onChange={e => setPaymentDetails({...paymentDetails, [f.key]: e.target.value})} onFocus={() => setPayActiveField(f.key)} style={{ padding:'8px', borderRadius:'6px', border:'1px solid var(--border-color)', width:'120px', textAlign:'right', fontWeight:'bold', fontSize:'1.1rem' }} />
+                    </div>
+                    {f.key === 'Room' && Number(paymentDetails.Room) > 0 && hotelRooms.length > 0 && (
+                      <select value={chargeRoomId} onChange={e => setChargeRoomId(e.target.value)} style={{ padding: '8px', marginTop: '10px', borderRadius: '6px', width: '100%', border: '1px solid var(--border-color)' }} onClick={e => e.stopPropagation()}>
+                        <option value="">Select Occupied Room...</option>
+                        {hotelRooms.map((r: any) => <option key={r.id} value={r.id}>{r.roomNumber}</option>)}
+                      </select>
+                    )}
                   </div>
                 ))}
               </div>
@@ -1003,11 +1048,11 @@ export default function RestaurantPOS({ currentUser, categories = [], sales = []
             {tables.length > 0 ? (
               <div style={{ maxHeight: '60vh', overflowY: 'auto', marginBottom: '20px' }}>
                 {Object.entries(
-                  tables.reduce((acc, table) => {
+                  tables.reduce((acc: any, table: any) => {
                     if (!acc[table.zone]) acc[table.zone] = [];
                     acc[table.zone].push(table);
                     return acc;
-                  }, {})
+                  }, {} as any) as Record<string, any[]>
                 ).map(([zone, zoneTables]) => (
                   <div key={zone} style={{ marginBottom: '20px' }}>
                     <h3 style={{ borderBottom: '1px solid var(--border-color)', paddingBottom: '8px', marginBottom: '15px' }}>{zone}</h3>

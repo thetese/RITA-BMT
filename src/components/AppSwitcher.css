@@ -180,7 +180,9 @@
   font-weight: 800;
   margin: 0 0 2px 0;
   letter-spacing: -1.5px;
-  color: #0f172a;
+  background: linear-gradient(135deg, #0f172a 0%, #334155 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
 }
 
 .as-subtitle {
@@ -229,6 +231,31 @@
   color: #94a3b8;
 }
 
+.btn-install-plugin {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: linear-gradient(135deg, #064e3b, #10b981);
+  color: white;
+  padding: 10px 20px;
+  border-radius: 12px;
+  cursor: pointer;
+  font-size: 0.95rem;
+  font-weight: 600;
+  border: 1px solid rgba(255,255,255,0.1);
+  box-shadow: 0 4px 15px rgba(16, 185, 129, 0.25);
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.btn-install-plugin:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 20px rgba(16, 185, 129, 0.4);
+}
+
+.btn-install-plugin:active {
+  transform: translateY(0);
+}
+
 /* App Grid */
 .as-apps-grid {
   display: grid;
@@ -258,32 +285,41 @@
 
 /* Gradient Cards */
 .as-app-card {
-  border: none;
-  border-radius: 18px;
-  padding: 20px;
+  border: 1px solid rgba(255, 255, 255, 0.4);
+  border-radius: 20px;
+  padding: 22px;
   cursor: pointer;
-  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  transition: all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
   position: relative;
   overflow: hidden;
   text-align: left;
   display: flex;
   flex-direction: column;
-  box-shadow: 0 4px 15px rgba(0,0,0,0.06);
+  box-shadow: 0 8px 24px rgba(0,0,0,0.06), inset 0 0 0 1px rgba(255,255,255,0.2);
+  backdrop-filter: blur(12px);
 }
 
 .as-app-card:hover {
-  transform: translateY(-4px);
-  box-shadow: 0 12px 30px rgba(0,0,0,0.1);
+  transform: translateY(-6px) scale(1.02);
+  box-shadow: 0 16px 36px var(--app-shadow, rgba(0,0,0,0.18)), inset 0 0 0 1px rgba(255,255,255,0.4);
+  border-color: rgba(255, 255, 255, 0.5);
 }
 
 /* Watermark Icon */
 .as-card-watermark {
   position: absolute;
-  bottom: 10px;
-  left: 10px;
-  color: rgba(0,0,0,0.06);
+  bottom: -12px;
+  left: -12px;
+  color: rgba(255, 255, 255, 0.09);
   z-index: 0;
   opacity: 1;
+  transition: transform 0.6s cubic-bezier(0.34, 1.56, 0.64, 1), color 0.4s ease;
+  pointer-events: none;
+}
+
+.as-app-card:hover .as-card-watermark {
+  transform: scale(1.18) rotate(8deg);
+  color: rgba(255, 255, 255, 0.16);
 }
 
 .as-app-card-content {
@@ -317,11 +353,11 @@
   font-size: 1rem;
   font-weight: 700;
   margin: 0;
-  color: #0f172a;
+  color: #ffffff;
 }
 
 .as-app-desc {
-  color: #475569;
+  color: rgba(255, 255, 255, 0.75);
   font-size: 0.82rem;
   line-height: 1.45;
   margin-bottom: 14px;
@@ -356,8 +392,14 @@
   align-items: center;
   justify-content: space-between;
   margin-top: auto;
-  box-shadow: 0 3px 10px rgba(0,0,0,0.02);
+  box-shadow: 0 4px 20px rgba(0,0,0,0.04);
   flex-shrink: 0;
+  transition: transform 0.3s ease;
+}
+
+.as-banner:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 25px rgba(0,0,0,0.06);
 }
 
 .as-banner-left {
@@ -440,7 +482,9 @@ body.dark .as-dropdown-danger:hover {
 }
 
 body.dark .as-title {
-  color: #f1f5f9;
+  background: linear-gradient(135deg, #f1f5f9 0%, #94a3b8 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
 }
 
 body.dark .as-subtitle {
@@ -462,19 +506,30 @@ body.dark .as-search-bar input::placeholder {
 }
 
 body.dark .as-app-card {
-  box-shadow: 0 4px 15px rgba(0,0,0,0.2);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  box-shadow: 0 8px 24px rgba(0,0,0,0.3), inset 0 0 0 1px rgba(255,255,255,0.02);
 }
 
 body.dark .as-app-card:hover {
-  box-shadow: 0 12px 30px rgba(0,0,0,0.35);
+  box-shadow: 0 15px 35px rgba(0,0,0,0.45), inset 0 0 0 1px rgba(255,255,255,0.05);
+}
+
+body.dark .btn-install-plugin {
+  background: linear-gradient(135deg, #10b981, #34d399);
+  color: #064e3b;
+  box-shadow: 0 4px 15px rgba(16, 185, 129, 0.15);
+}
+
+body.dark .btn-install-plugin:hover {
+  box-shadow: 0 6px 20px rgba(16, 185, 129, 0.3);
 }
 
 body.dark .as-app-title {
-  color: #0f172a;
+  color: #ffffff;
 }
 
 body.dark .as-card-watermark {
-  color: rgba(0,0,0,0.08);
+  color: rgba(255, 255, 255, 0.12);
 }
 
 body.dark .as-banner {

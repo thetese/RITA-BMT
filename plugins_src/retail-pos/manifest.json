@@ -1,0 +1,15 @@
+{
+  "id": "rita-plugin-retail",
+  "name": "Retail POS",
+  "description": "Manage sales, customers and transactions",
+  "version": "1.0.0",
+  "icon": "ShoppingBag",
+  "iconBg": "#3b82f6",
+  "gradient": "linear-gradient(180deg, #0f172a 0%, #1e3a8a 50%, #2563eb 100%)",
+  "roles": [
+    "Admin",
+    "Retail",
+    "Cashier"
+  ],
+  "entryFile": "dist/plugin.js"
+}

@@ -294,7 +294,7 @@ export default function Appointments({ currentUser }) {
               </div>
               <div className="form-group">
                 <label>Notes</label>
-                <textarea rows="2" value={formData.notes} onChange={e => setFormData({...formData, notes: e.target.value})}></textarea>
+                <textarea rows={2} value={formData.notes} onChange={e => setFormData({...formData, notes: e.target.value})}></textarea>
               </div>
               <div className="form-actions">
                 <button type="button" className="btn-secondary" onClick={() => setIsModalOpen(false)}>Cancel</button>

@@ -24,6 +24,11 @@ function startServer(store, port = 4000) {
   app.use('/api', (req, res, next) => {
     if (req.path === '/ping') return next(); // Allow health check
     
+    // Bypass authentication for local Web Portal requests
+    const origin = req.headers.origin;
+    if (origin && (origin.includes('localhost:5173') || origin.includes('localhost:3001') || origin.includes('localhost:3000'))) {
+      return next();
+    }
     
     let configuredKey = store.getSetting('serverApiKey');
     if (!configuredKey) {
@@ -46,6 +51,15 @@ function startServer(store, port = 4000) {
   // Check health
   app.get('/api/ping', (req, res) => {
     res.json({ status: 'ok', time: new Date() });
+  });
+
+  // Users
+  app.get('/api/users', (req, res) => {
+    try {
+      res.json(store.getUsers());
+    } catch (e) {
+      res.status(500).json({ error: e.message });
+    }
   });
 
   // Products

@@ -2,7 +2,7 @@
 // @ts-nocheck
 import React, { useState, useMemo } from 'react';
 import { generateThermalReceiptHTML } from '../utils/receiptGenerator';
-import { vsdcApi } from '../utils/vsdcMock';
+import { vsdcApi } from '../utils/vsdcClient';
 import { useToast } from './ui/Toast';
 import { useConfirm } from './ui/Confirm';
 
@@ -78,6 +78,9 @@ export default function ReceiptsHistory({ sales, currentUser }) {
         };
       });
 
+      const sdcId = await window.api.getSetting('vsdcSdcId') || "";
+      const mrcNo = await window.api.getSetting('vsdcMrcNo') || "";
+
       const rraData = {
         tin,
         businessName,
@@ -86,8 +89,8 @@ export default function ReceiptsHistory({ sales, currentUser }) {
         rcptSign: receipt.receiptSignature,
         intrlData: receipt.internalData,
         rcptNo: receipt.receiptNo,
-        sdcId: "VSDC-MOCK-SDC", // From mock
-        mrcNo: "VSDC-MOCK-MRC", // From mock
+        sdcId: sdcId,
+        mrcNo: mrcNo,
         taxblAmtA,
         taxblAmtB,
         taxAmtB
@@ -143,7 +146,13 @@ export default function ReceiptsHistory({ sales, currentUser }) {
         stockRlsDt: dateStr.replace(/-/g, '') + "120000",
         totItemCnt: receipt.items.length,
         totAmt: -Math.abs(receipt.totalAmount),
-        itemList: [] // Simplified for mock
+        itemList: receipt.items.map((item, index) => ({
+          itemSeq: index + 1,
+          itemNm: item.productName,
+          qty: -Math.abs(item.quantity),
+          prc: item.unitPrice,
+          totAmt: -Math.abs(item.totalPrice)
+        }))
       };
 
       await vsdcApi.saveSales(vsdcPayload);

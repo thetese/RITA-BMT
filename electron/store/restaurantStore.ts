@@ -2,14 +2,15 @@ const crypto = require('crypto');
 
 module.exports = {
   // Waiters
-  getWaiters() {
-    return this.db.prepare('SELECT * FROM waiters ORDER BY name ASC').all();
+  getWaiters(storeId) {
+    if (!storeId || storeId === 'general') return this.db.prepare('SELECT * FROM waiters ORDER BY name ASC').all();
+    return this.db.prepare('SELECT * FROM waiters WHERE storeId = ? ORDER BY name ASC').all(storeId);
   },
 
   addWaiter(waiter) {
     const id = crypto.randomUUID();
-    const stmt = this.db.prepare("INSERT INTO waiters (id, name, createdAt) VALUES (?, ?, datetime('now'))");
-    stmt.run(id, waiter.name);
+    const stmt = this.db.prepare("INSERT INTO waiters (id, name, createdAt, storeId) VALUES (?, ?, datetime('now'), ?)");
+    stmt.run(id, waiter.name, waiter.storeId || 'default-store-id');
     const newWaiter = { ...waiter, id };
     this.addSyncJob('waiters:upsert', newWaiter);
     return newWaiter;
@@ -101,15 +102,15 @@ module.exports = {
   },
 
   // --- Tables ---
-  getTables() {
-    const stmt = this.db.prepare('SELECT * FROM restaurant_tables ORDER BY zone ASC, name ASC');
-    return stmt.all();
+  getTables(storeId) {
+    if (!storeId || storeId === 'general') return this.db.prepare('SELECT * FROM restaurant_tables ORDER BY zone ASC, name ASC').all();
+    return this.db.prepare('SELECT * FROM restaurant_tables WHERE storeId = ? ORDER BY zone ASC, name ASC').all(storeId);
   },
 
   addTable(table, userId) {
     const id = crypto.randomUUID();
-    const stmt = this.db.prepare("INSERT INTO restaurant_tables (id, name, zone, seats, posX, posY, createdAt) VALUES (?, ?, ?, ?, ?, ?, datetime('now'))");
-    stmt.run(id, table.name, table.zone, table.seats || 4, table.posX || 0, table.posY || 0);
+    const stmt = this.db.prepare("INSERT INTO restaurant_tables (id, name, zone, seats, posX, posY, createdAt, storeId) VALUES (?, ?, ?, ?, ?, ?, datetime('now'), ?)");
+    stmt.run(id, table.name, table.zone, table.seats || 4, table.posX || 0, table.posY || 0, table.storeId || 'default-store-id');
     this.logAudit(userId, 'CREATE_TABLE', `Created table ${table.name} in zone ${table.zone}`);
     const newTable = { ...table, id };
     this.addSyncJob('restaurant_tables:upsert', newTable);

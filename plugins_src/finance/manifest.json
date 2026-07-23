@@ -1,0 +1,13 @@
+{
+  "id": "rita-plugin-finance",
+  "name": "Finance",
+  "description": "Monitor cash flow, expenses and financial reports",
+  "version": "1.0.0",
+  "icon": "LineChart",
+  "iconBg": "#14b8a6",
+  "gradient": "linear-gradient(180deg, #042f2e 0%, #115e59 50%, #0d9488 100%)",
+  "roles": [
+    "Admin"
+  ],
+  "entryFile": "dist/plugin.js"
+}
