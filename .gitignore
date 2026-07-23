@@ -1,0 +1,16 @@
+node_modules
+dist
+dist-electron
+release
+*.local
+.env
+.DS_Store
+*.sqlite
+*.db
+
+node_modules/
+dist/
+dist-electron/
+sales.db
+sales_general.db
+sales_retail.db
