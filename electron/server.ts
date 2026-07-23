@@ -7,6 +7,18 @@ const { createClient } = require('@supabase/supabase-js');
 
 function startServer(store, port = 4000) {
   const app = express();
+  const http = require('http');
+  const server = http.createServer(app);
+  const { Server } = require('socket.io');
+  
+  // Real-time WebSockets setup
+  const io = new Server(server, {
+    cors: { origin: ['http://localhost:5173', 'file://'] }
+  });
+
+  io.on('connection', (socket) => {
+    console.log('Client connected for real-time updates:', socket.id);
+  });
   
   app.use(helmet());
   app.use(cors({ origin: ['http://localhost:5173', 'file://'] }));
@@ -14,111 +26,30 @@ function startServer(store, port = 4000) {
 
   // Rate Limiting for API routes
   const apiLimiter = rateLimit({
-    windowMs: 1 * 60 * 1000, // 1 minute
-    max: 100, // Limit each IP to 100 requests per windowMs
+    windowMs: 1 * 60 * 1000,
+    max: 100,
     message: { error: 'Too many requests, please try again later.' }
   });
   app.use('/api', apiLimiter);
 
-  // Global API Authentication Middleware
-  app.use('/api', (req, res, next) => {
-    if (req.path === '/ping') return next(); // Allow health check
-    
-    
-    let configuredKey = store.getSetting('serverApiKey');
-    if (!configuredKey) {
-      configuredKey = require('crypto').randomUUID();
-      store.updateSetting('serverApiKey', configuredKey, 'System');
-      console.log('Generated new server API key.');
-    }
+  // JWT Authentication Middleware
+  const authMiddleware = require('./middleware/auth')(store);
+  app.use('/api', authMiddleware);
 
-    const providedKey = req.headers['x-api-key'];
-    
-    if (providedKey !== configuredKey) {
-      return res.status(401).json({ error: 'Unauthorized: Invalid or missing API Key' });
-    }
-    next();
-  });
+  // Routes Setup
+  const authRouter = require('./routes/auth')(store);
+  const productsRouter = require('./routes/products')(store);
+  const salesRouter = require('./routes/sales')(store, io);
+  const customersRouter = require('./routes/customers')(store);
+  const dashboardRouter = require('./routes/dashboard')(store);
+  const inventoryRouter = require('./routes/inventory')(store);
 
-  // Serve Mobile Companion App
-  app.use('/mobile', express.static(path.join(__dirname, '..', 'public', 'mobile')));
-
-  // Check health
-  app.get('/api/ping', (req, res) => {
-    res.json({ status: 'ok', time: new Date() });
-  });
-
-  // Products
-  app.get('/api/products', (req, res) => {
-    try {
-      res.json(store.getProducts());
-    } catch (e) {
-      res.status(500).json({ error: e.message });
-    }
-  });
-
-  // Sales
-  app.get('/api/sales', (req, res) => {
-    try {
-      res.json(store.getSales());
-    } catch (e) {
-      res.status(500).json({ error: e.message });
-    }
-  });
-
-  app.post('/api/sales', (req, res) => {
-    try {
-      const sale = req.body;
-      const result = store.addSale(sale, req.body.userId || 'mobile-sync');
-      res.json({ success: true, result });
-    } catch (e) {
-      res.status(500).json({ error: e.message });
-    }
-  });
-
-  // Customers
-  app.get('/api/customers', (req, res) => {
-    try {
-      res.json(store.getCustomers());
-    } catch (e) {
-      res.status(500).json({ error: e.message });
-    }
-  });
-
-  // Dashboard Stats (Mobile Dashboard needs summary)
-  app.get('/api/dashboard', (req, res) => {
-    try {
-      const sales = store.getSales();
-      const today = new Date().toISOString().split('T')[0];
-      const todaySales = sales.filter(s => s.date === today);
-      const totalToday = todaySales.reduce((acc, s) => acc + s.totalPrice, 0);
-      
-      res.json({
-        totalSalesToday: totalToday,
-        transactionsToday: todaySales.length,
-      });
-    } catch (e) {
-      res.status(500).json({ error: e.message });
-    }
-  });
-
-  // Recent Sales
-  app.get('/api/sales/recent', (req, res) => {
-    try {
-      res.json(store.getRecentSales(15));
-    } catch (e) {
-      res.status(500).json({ error: e.message });
-    }
-  });
-
-  // Low Stock
-  app.get('/api/inventory/low-stock', (req, res) => {
-    try {
-      res.json(store.getLowStockItems ? store.getLowStockItems() : []);
-    } catch (e) {
-      res.status(500).json({ error: e.message });
-    }
-  });
+  app.use('/api/auth', authRouter);
+  app.use('/api/products', productsRouter);
+  app.use('/api/sales', salesRouter);
+  app.use('/api/customers', customersRouter);
+  app.use('/api/dashboard', dashboardRouter);
+  app.use('/api/inventory', inventoryRouter);
 
   // Stripe Checkout Session
   app.post('/api/stripe/create-checkout', async (req, res) => {
@@ -190,8 +121,8 @@ function startServer(store, port = 4000) {
     res.status(500).json({ error: 'Internal Server Error' });
   });
 
-  app.listen(port, () => {
-    console.log(`Local Sync Server running on http://localhost:${port}`);
+  server.listen(port, () => {
+    console.log(`Local Sync Server with WebSockets running on http://localhost:${port}`);
   });
 }
 

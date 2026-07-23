@@ -1,4 +1,4 @@
-// @ts-nocheck
+
 import React, { useState, useEffect } from 'react';
 import { 
   Printer, Banknote, Smartphone, CreditCard, Search, X, Trash2, Mic, PauseCircle,
@@ -20,8 +20,16 @@ import { buildVSDCPayload } from '../utils/vsdc';
 import { formatMoney } from '../utils/format';
 import CartItem from './ui/CartItem';
 import { printReceiptHTML } from '../utils/printer';
+import { User, Category, Sale } from '../types';
 
-export default function RetailPOS({ currentUser, categories = [], sales = [], onSave }) {
+interface RetailPOSProps {
+  currentUser?: User;
+  categories?: Category[] | string[];
+  sales?: Sale[];
+  onSave?: () => void;
+}
+
+export default function RetailPOS({ currentUser, categories = [], sales = [], onSave }: RetailPOSProps) {
   const { showToast } = useToast();
   const { askConfirm } = useConfirm();
   
@@ -79,14 +87,14 @@ export default function RetailPOS({ currentUser, categories = [], sales = [], on
   const [showSaveModal, setShowSaveModal] = useState(false);
   const [saveOrderName, setSaveOrderName] = useState('');
 
-  if (currentUser?.id && !activeShift) return <ShiftManager mode="open" onSubmit={handleOpenShift} />;
+  if (currentUser?.id && !activeShift) return <ShiftManager mode="open" shift={null} onCancel={()=>{}} onSubmit={handleOpenShift} />;
   if (shiftMode === 'close' && activeShift) return <ShiftManager mode="close" shift={activeShift} onSubmit={handleCloseShift} onCancel={() => setShiftMode(null)} />;
 
   const handleHoldCartClick = async () => {
     if (cart.length === 0) return;
     try {
       if (activeOrderId) {
-        await saveHeldCart(cart, activeOrderName, currentUser.username);
+        await saveHeldCart(cart, activeOrderName, (currentUser as any).username);
         clearCart();
         setCustomerName('');
         setNotes('');
@@ -108,7 +116,7 @@ export default function RetailPOS({ currentUser, categories = [], sales = [], on
       return;
     }
     try {
-      await saveHeldCart(cart, saveOrderName, currentUser.username);
+      await saveHeldCart(cart, saveOrderName, (currentUser as any).username);
       setShowSaveModal(false);
       clearCart();
       setCustomerName('');
@@ -130,7 +138,7 @@ export default function RetailPOS({ currentUser, categories = [], sales = [], on
       const businessPhone = await window.api.getSetting('businessPhone') || '';
       
       const htmlReceipt = generateProformaHTML(
-        receiptCart, totalAmount, customerName, currentUser.username,
+        receiptCart, totalAmount, customerName, (currentUser as any).username,
         { businessName, businessAddress, businessPhone }, activeOrderName
       );
 
@@ -248,7 +256,7 @@ export default function RetailPOS({ currentUser, categories = [], sales = [], on
           receiptSignature: rcptSign,
           internalData: intrlData,
           receiptNo: rcptNo,
-          waiterName: currentUser.username
+
         }, currentUser.id);
       }
 
@@ -262,7 +270,7 @@ export default function RetailPOS({ currentUser, categories = [], sales = [], on
       const receiptCart = cart.map(item => ({ ...item, discountAmount: calculateItemDiscount(item) }));
 
       const htmlReceipt = generateThermalReceiptHTML(
-        receiptCart, totalAmount, receiptId, paymentMethod, customerName, currentUser.username,
+        receiptCart, totalAmount, receiptId, paymentMethod, customerName, (currentUser as any).username,
         {
           tin, businessName, businessAddress, businessPhone, rcptSign, intrlData, rcptNo,
           sdcId: vsdcResponse.data.sdcId, mrcNo: vsdcResponse.data.mrcNo, taxblAmtA, taxblAmtB, taxAmtB
@@ -503,21 +511,21 @@ export default function RetailPOS({ currentUser, categories = [], sales = [], on
         <div style={{ display: 'flex', flexDirection: 'column', gap: '15px', marginBottom: '20px' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <label style={{ fontWeight: 'bold' }}>Cash (FRW)</label>
-            <input type="number" min="0" value={paymentDetails.Cash as any} onChange={e => setPaymentDetails({...paymentDetails, Cash: e.target.value})} style={{ padding: '8px', borderRadius: '4px', border: '1px solid var(--border-color)', width: '150px', textAlign: 'right' }} />
+            <input type="number" min="0" value={paymentDetails.Cash as any} onChange={e => setPaymentDetails({...paymentDetails, Cash: e.target.value as any})} style={{ padding: '8px', borderRadius: '4px', border: '1px solid var(--border-color)', width: '150px', textAlign: 'right' }} />
           </div>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <label style={{ fontWeight: 'bold' }}>Card (FRW)</label>
-            <input type="number" min="0" value={paymentDetails.Card as any} onChange={e => setPaymentDetails({...paymentDetails, Card: e.target.value})} style={{ padding: '8px', borderRadius: '4px', border: '1px solid var(--border-color)', width: '150px', textAlign: 'right' }} />
+            <input type="number" min="0" value={paymentDetails.Card as any} onChange={e => setPaymentDetails({...paymentDetails, Card: e.target.value as any})} style={{ padding: '8px', borderRadius: '4px', border: '1px solid var(--border-color)', width: '150px', textAlign: 'right' }} />
           </div>
           {selectedCustomer && (
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid var(--border-color)', paddingBottom: '10px' }}>
               <label style={{ fontWeight: 'bold' }}>Store Credit (FRW)</label>
-              <input type="number" min="0" value={paymentDetails.Credit as any} onChange={e => setPaymentDetails({...paymentDetails, Credit: e.target.value})} style={{ padding: '8px', borderRadius: '4px', border: '1px solid var(--border-color)', width: '150px', textAlign: 'right' }} />
+              <input type="number" min="0" value={paymentDetails.Credit as any} onChange={e => setPaymentDetails({...paymentDetails, Credit: e.target.value as any})} style={{ padding: '8px', borderRadius: '4px', border: '1px solid var(--border-color)', width: '150px', textAlign: 'right' }} />
             </div>
           )}
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <label style={{ fontWeight: 'bold' }}>Momo (FRW)</label>
-            <input type="number" min="0" value={paymentDetails.Momo as any} onChange={e => setPaymentDetails({...paymentDetails, Momo: e.target.value})} style={{ padding: '8px', borderRadius: '4px', border: '1px solid var(--border-color)', width: '150px', textAlign: 'right' }} />
+            <input type="number" min="0" value={paymentDetails.Momo as any} onChange={e => setPaymentDetails({...paymentDetails, Momo: e.target.value as any})} style={{ padding: '8px', borderRadius: '4px', border: '1px solid var(--border-color)', width: '150px', textAlign: 'right' }} />
           </div>
         </div>
 
@@ -551,3 +559,5 @@ export default function RetailPOS({ currentUser, categories = [], sales = [], on
     </>
   );
 }
+
+

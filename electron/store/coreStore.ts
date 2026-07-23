@@ -298,6 +298,24 @@ module.exports = {
         this.db.prepare('UPDATE customers SET points = COALESCE(points, 0) + ? WHERE id=?').run(totalEarnedPoints, customerId);
       }
       
+      const totalSale = items.reduce((sum: number, item: any) => sum + item.totalPrice, 0);
+      const totalCost = items.reduce((sum: number, item: any) => sum + (item.costPrice || 0) * item.quantity, 0);
+
+      if (totalSale > 0) {
+        try {
+          const entryId = crypto.randomUUID();
+          this.db.prepare('INSERT INTO journal_entries (id, date, description, referenceId, createdAt) VALUES (?, ?, ?, ?, datetime("now"))')
+            .run(entryId, date || new Date().toISOString(), 'POS Sale', 'SALE-' + Date.now());
+          const insertLine = this.db.prepare('INSERT INTO journal_lines (id, entryId, accountId, debit, credit) VALUES (?, ?, ?, ?, ?)');
+          insertLine.run(crypto.randomUUID(), entryId, 'acc-1000', totalSale, 0);
+          insertLine.run(crypto.randomUUID(), entryId, 'acc-4000', 0, totalSale);
+          insertLine.run(crypto.randomUUID(), entryId, 'acc-5000', totalCost, 0);
+          insertLine.run(crypto.randomUUID(), entryId, 'acc-1200', 0, totalCost);
+        } catch (e) {
+          console.error('Failed to post journal entry for sale:', e);
+        }
+      }
+      
       return results;
     });
 
@@ -772,6 +790,132 @@ module.exports = {
   updateUserRates(userId, hourlyRate, commissionRate) {
     const stmt = this.db.prepare('UPDATE users SET hourlyRate = ?, commissionRate = ? WHERE id = ?');
     stmt.run(hourlyRate, commissionRate, userId);
+    return true;
+  },
+
+  // --- ACCOUNTING ---
+  getAccounts() {
+    return this.db.prepare('SELECT * FROM accounts ORDER BY code ASC').all();
+  },
+  addAccount(account: any) {
+    const stmt = this.db.prepare('INSERT INTO accounts (id, code, name, type) VALUES (?, ?, ?, ?)');
+    stmt.run(account.id || require('crypto').randomUUID(), account.code, account.name, account.type);
+    return true;
+  },
+  getJournalEntries() {
+    const entries = this.db.prepare('SELECT * FROM journal_entries ORDER BY date DESC').all();
+    const lines = this.db.prepare('SELECT * FROM journal_lines').all();
+    return entries.map(e => ({
+      ...e,
+      lines: lines.filter(l => l.entryId === e.id)
+    }));
+  },
+  addJournalEntry(entry: any) {
+    const entryId = require('crypto').randomUUID();
+    this.db.transaction(() => {
+      this.db.prepare('INSERT INTO journal_entries (id, date, description, referenceId, createdAt) VALUES (?, ?, ?, ?, datetime("now"))')
+        .run(entryId, entry.date, entry.description, entry.referenceId || '');
+      const insertLine = this.db.prepare('INSERT INTO journal_lines (id, entryId, accountId, debit, credit) VALUES (?, ?, ?, ?, ?)');
+      for (const line of entry.lines) {
+        insertLine.run(require('crypto').randomUUID(), entryId, line.accountId, line.debit || 0, line.credit || 0);
+      }
+    })();
+    return { ...entry, id: entryId };
+  },
+
+  // --- CRM ---
+  getLeads() {
+    return this.db.prepare('SELECT * FROM crm_leads ORDER BY createdAt DESC').all();
+  },
+  addLead(lead: any) {
+    const id = require('crypto').randomUUID();
+    this.db.prepare('INSERT INTO crm_leads (id, name, company, email, phone, status, expectedValue, notes, createdAt) VALUES (?, ?, ?, ?, ?, ?, ?, ?, datetime("now"))')
+      .run(id, lead.name, lead.company || '', lead.email || '', lead.phone || '', lead.status || 'NEW', lead.expectedValue || 0, lead.notes || '');
+    return { ...lead, id };
+  },
+  updateLeadStatus(id: string, status: string) {
+    this.db.prepare('UPDATE crm_leads SET status = ? WHERE id = ?').run(status, id);
+    return true;
+  },
+  getCrmActivities(leadId: string) {
+    return this.db.prepare('SELECT * FROM crm_activities WHERE leadId = ? ORDER BY date DESC').all(leadId);
+  },
+  addCrmActivity(activity: any, userId: any) {
+    const id = require('crypto').randomUUID();
+    const dateStr = activity.date || new Date().toISOString();
+    this.db.prepare('INSERT INTO crm_activities (id, leadId, type, description, date, userId, createdAt) VALUES (?, ?, ?, ?, ?, ?, datetime("now"))')
+      .run(id, activity.leadId, activity.type, activity.description, dateStr, userId || null);
+    return { ...activity, id, date: dateStr };
+  },
+  convertLeadToCustomer(leadId: string, userId: any) {
+    const lead = this.db.prepare('SELECT * FROM crm_leads WHERE id = ?').get(leadId);
+    if (!lead) throw new Error('Lead not found');
+    this.db.transaction(() => {
+      const customerId = require('crypto').randomUUID();
+      this.db.prepare('INSERT INTO customers (id, name, phone, email, address, totalSpent, points, createdAt) VALUES (?, ?, ?, ?, ?, 0, 0, datetime("now"))')
+        .run(customerId, lead.company || lead.name, lead.phone || '', lead.email || '', '');
+      this.db.prepare('UPDATE crm_leads SET status = "WON", notes = COALESCE(notes, "") || "\nConverted to Customer." WHERE id = ?').run(leadId);
+      this.db.prepare('INSERT INTO crm_activities (id, leadId, type, description, date, userId, createdAt) VALUES (?, ?, "SYSTEM", "Converted to active Customer.", datetime("now"), ?, datetime("now"))')
+        .run(require('crypto').randomUUID(), leadId, userId || null);
+    })();
+    return true;
+  },
+
+  // --- HR & PAYROLL ---
+  getSalesForPayroll(startDate: string, endDate: string) {
+    return this.db.prepare('SELECT s.*, u.username as employeeName, u.commissionRate FROM sales s JOIN users u ON u.id = s.userId WHERE s.date >= ? AND s.date <= ? AND s.status = "COMPLETED"').all(startDate, endDate);
+  },
+  getLeaveRequests() {
+    return this.db.prepare('SELECT lr.*, u.username as employeeName FROM hr_leave_requests lr JOIN users u ON u.id = lr.userId ORDER BY lr.createdAt DESC').all();
+  },
+  addLeaveRequest(req: any, userId: any) {
+    const id = require('crypto').randomUUID();
+    this.db.prepare('INSERT INTO hr_leave_requests (id, userId, type, startDate, endDate, status, notes, createdAt) VALUES (?, ?, ?, ?, ?, "PENDING", ?, datetime("now"))')
+      .run(id, req.userId, req.type, req.startDate, req.endDate, req.notes || '');
+    return { ...req, id };
+  },
+  updateLeaveRequestStatus(id: string, status: string) {
+    const info = this.db.prepare('UPDATE hr_leave_requests SET status = ? WHERE id = ?').run(status, id);
+    return info.changes > 0;
+  },
+
+  // --- WAREHOUSES ---
+  getWarehouses() {
+    return this.db.prepare('SELECT * FROM warehouses ORDER BY name ASC').all();
+  },
+  addWarehouse(warehouse: any) {
+    const id = require('crypto').randomUUID();
+    this.db.prepare('INSERT INTO warehouses (id, name, location, createdAt) VALUES (?, ?, ?, datetime("now"))').run(id, warehouse.name, warehouse.location || '');
+    return { ...warehouse, id };
+  },
+  getWarehouseStock(warehouseId: string) {
+    return this.db.prepare('SELECT * FROM warehouse_stock WHERE warehouseId = ?').all(warehouseId);
+  },
+  getStockTransfers() {
+    return this.db.prepare('SELECT * FROM stock_transfers ORDER BY createdAt DESC').all();
+  },
+  addStockTransfer(transfer: any, userId: any) {
+    const id = require('crypto').randomUUID();
+    this.db.prepare('INSERT INTO stock_transfers (id, sourceWarehouseId, destWarehouseId, productId, quantity, status, notes, createdBy, createdAt) VALUES (?, ?, ?, ?, ?, "PENDING", ?, ?, datetime("now"))')
+      .run(id, transfer.sourceWarehouseId, transfer.destWarehouseId, transfer.productId, transfer.quantity, transfer.notes || '', userId || null);
+    return { ...transfer, id, status: 'PENDING' };
+  },
+  updateStockTransferStatus(id: string, status: string, userId: any) {
+    this.db.transaction(() => {
+      this.db.prepare('UPDATE stock_transfers SET status = ? WHERE id = ?').run(status, id);
+      if (status === 'RECEIVED') {
+        const transfer = this.db.prepare('SELECT * FROM stock_transfers WHERE id = ?').get(id);
+        if (transfer) {
+          this.db.prepare('UPDATE warehouse_stock SET quantity = quantity - ? WHERE warehouseId = ? AND productId = ?').run(transfer.quantity, transfer.sourceWarehouseId, transfer.productId);
+          const destStock = this.db.prepare('SELECT * FROM warehouse_stock WHERE warehouseId = ? AND productId = ?').get(transfer.destWarehouseId, transfer.productId);
+          if (destStock) {
+            this.db.prepare('UPDATE warehouse_stock SET quantity = quantity + ? WHERE warehouseId = ? AND productId = ?').run(transfer.quantity, transfer.destWarehouseId, transfer.productId);
+          } else {
+            this.db.prepare('INSERT INTO warehouse_stock (id, warehouseId, productId, quantity) VALUES (?, ?, ?, ?)').run(require('crypto').randomUUID(), transfer.destWarehouseId, transfer.productId, transfer.quantity);
+          }
+        }
+      }
+    })();
     return true;
   }
 };

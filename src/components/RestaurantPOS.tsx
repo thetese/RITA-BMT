@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { 
   Printer, Banknote, Smartphone, CreditCard, Search, X, Trash2, Mic, PauseCircle,
@@ -7,6 +8,9 @@ import { v4 as uuidv4 } from 'uuid';
 import { generateThermalReceiptHTML, generateProformaHTML } from '../utils/receiptGenerator';
 import { vsdcApi } from '../utils/vsdcMock';
 import ShiftManager from './ShiftManager';
+import ProductGrid from './pos/ProductGrid';
+import OrderCart from './pos/OrderCart';
+import CheckoutPanel from './pos/CheckoutPanel';
 
 export default function RestaurantPOS({ currentUser, categories = [], sales = [], onSave }) {
   const [waiters, setWaiters] = useState([]);
@@ -14,8 +18,6 @@ export default function RestaurantPOS({ currentUser, categories = [], sales = []
   const [view, setView] = useState('waiterSelect'); // 'waiterSelect', 'dashboard', 'pos'
   const [products, setProducts] = useState([]);
   const [cart, setCart] = useState([]);
-  const [filterCategory, setFilterCategory] = useState('');
-  const [search, setSearch] = useState('');
   
   const [paymentMethod, setPaymentMethod] = useState('Cash'); // Legacy, we will move to complex
   const [customerName, setCustomerName] = useState('');
@@ -166,7 +168,7 @@ export default function RestaurantPOS({ currentUser, categories = [], sales = []
   };
 
   if (currentUser?.id && !activeShift) {
-    return <ShiftManager mode="open" onSubmit={handleOpenShift} />;
+    return <ShiftManager mode="open" shift={null} onCancel={()=>{}} onSubmit={handleOpenShift} />;
   }
 
   if (shiftMode === 'close' && activeShift) {
@@ -361,7 +363,7 @@ export default function RestaurantPOS({ currentUser, categories = [], sales = []
   };
 
   const totalAmount = cart.reduce((sum, item) => sum + ((item.quantity * item.unitPrice) - calculateItemDiscount(item)), 0);
-  const totalPaid = (parseFloat(paymentDetails.Cash) || 0) + (parseFloat(paymentDetails.Card) || 0) + (parseFloat(paymentDetails.Momo) || 0);
+  const totalPaid = (parseFloat(String(paymentDetails.Cash)) || 0) + (parseFloat(String(paymentDetails.Card)) || 0) + (parseFloat(String(paymentDetails.Momo)) || 0);
   const finalTotalAmount = Math.max(0, totalAmount - (redeemPoints * 10));
   const changeDue = totalPaid - finalTotalAmount;
 
@@ -483,9 +485,9 @@ export default function RestaurantPOS({ currentUser, categories = [], sales = []
           notes: notes,
           paymentMethod: paymentDetails.Cash >= paymentDetails.Card && paymentDetails.Cash >= paymentDetails.Momo ? 'Cash' : paymentDetails.Card >= paymentDetails.Momo ? 'Card' : 'Mobile Money',
           paymentDetails: JSON.stringify({
-            Cash: parseFloat(paymentDetails.Cash) || 0,
-            Card: parseFloat(paymentDetails.Card) || 0,
-            "Mobile Money": parseFloat(paymentDetails.Momo) || 0
+            Cash: parseFloat(String(paymentDetails.Cash)) || 0,
+            Card: parseFloat(String(paymentDetails.Card)) || 0,
+            "Mobile Money": parseFloat(String(paymentDetails.Momo)) || 0
           }),
           discountAmount: dcAmt,
           discountRate: dcRt,
@@ -529,9 +531,9 @@ export default function RestaurantPOS({ currentUser, categories = [], sales = []
           taxAmtB
         },
         {
-          Cash: parseFloat(paymentDetails.Cash) || 0,
-          Card: parseFloat(paymentDetails.Card) || 0,
-          "Mobile Money": parseFloat(paymentDetails.Momo) || 0
+          Cash: parseFloat(String(paymentDetails.Cash)) || 0,
+          Card: parseFloat(String(paymentDetails.Card)) || 0,
+          "Mobile Money": parseFloat(String(paymentDetails.Momo)) || 0
         }
       );
 
@@ -566,12 +568,6 @@ export default function RestaurantPOS({ currentUser, categories = [], sales = []
       alert("Error during checkout: " + err.message);
     }
   };
-
-  const filteredProducts = products.filter(p => {
-    if (filterCategory && p.category !== filterCategory) return false;
-    if (search && !p.productName.toLowerCase().includes(search.toLowerCase())) return false;
-    return true;
-  });
 
   if (view === 'waiterSelect') {
     return (
@@ -697,200 +693,41 @@ export default function RestaurantPOS({ currentUser, categories = [], sales = []
   return (
     <div className="pos-container">
       
-      {/* Left Panel: Product Selection */}
-      <div className="pos-panel pos-products-panel">
-        <div className="pos-search-bar">
-          <input 
-            type="text" 
-            placeholder="Search products..." 
-            value={search} 
-            onChange={e => setSearch(e.target.value)} 
-            className="pos-search-input"
-          />
-          <select value={filterCategory} onChange={e => setFilterCategory(e.target.value)} className="pos-search-input" style={{ flex: '0 0 200px' }}>
-            <option value="">All Categories</option>
-            {categories.map(c => <option key={c} value={c}>{c}</option>)}
-          </select>
-        </div>
-
-        <div className="pos-product-grid">
-          {filteredProducts.map(p => {
-            const isOutOfStock = p.stockQuantity <= 0;
-            const isLowStock = p.stockQuantity > 0 && p.stockQuantity <= 5;
-            
-            // Assign a subtle gradient tint based on category hash for visual grouping
-            const catHash = p.category ? p.category.charCodeAt(0) % 5 : 0;
-            const cardBg = isOutOfStock ? 'var(--bg-secondary)' : `var(--pos-cat-${catHash})`;
-
-            return (
-              <div 
-                key={p.id} 
-                onClick={() => { if (!isOutOfStock) addToCart(p, null); }}
-                className={`pos-product-card ${isOutOfStock ? 'out-of-stock' : ''}`}
-                style={{ background: cardBg }}
-              >
-                {isLowStock && <div style={{ position: 'absolute', top: '-8px', right: '-8px', background: '#ff9800', color: '#fff', fontSize: '0.7rem', padding: '2px 6px', borderRadius: '10px', fontWeight: 'bold', boxShadow: '0 2px 4px rgba(0,0,0,0.2)', zIndex: 10 }}>LOW STOCK</div>}
-                
-                <div>
-                  <div style={{ display: 'inline-block', padding: '2px 6px', background: 'var(--pos-cat-tag-bg)', borderRadius: '4px', fontSize: '0.65rem', fontWeight: 'bold', textTransform: 'uppercase', color: 'var(--pos-cat-tag-text)', marginBottom: '4px', maxWidth: '100%', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                    {p.category || 'Item'}
-                  </div>
-                  <div className="pos-product-title" style={{ color: 'var(--pos-card-title)' }}>{p.productName}</div>
-                </div>
-                
-                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', marginTop: '6px' }}>
-                  <div style={{ fontSize: '0.7rem', color: isLowStock ? '#ff9800' : 'var(--text-secondary)', fontWeight: isLowStock ? 'bold' : 'normal', marginBottom: '2px' }}>
-                    Stock: {p.stockQuantity || 0}
-                  </div>
-                  <div className="pos-product-price" style={{ whiteSpace: 'nowrap' }}>{p.unitPrice.toLocaleString()} FRW</div>
-                </div>
-              </div>
-            );
-          })}
-          {filteredProducts.length === 0 && (
-            <div style={{ gridColumn: '1 / -1', textAlign: 'center', color: 'var(--text-secondary)', padding: '40px', fontSize: '1.2rem' }}>No products found.</div>
-          )}
-        </div>
-      </div>
+      <ProductGrid 
+        products={products}
+        categories={categories}
+        addToCart={addToCart}
+      />
 
       {/* Right Panel: Cart */}
       <div className="pos-panel pos-cart-panel">
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', margin: '0 0 20px 0' }}>
-          <h2 style={{ margin: 0, fontSize: '1.5rem' }}>{activeOrderId ? `Table: ${activeOrderName}` : 'New Order'}</h2>
-          <div style={{ display: 'flex', gap: '8px' }}>
-            <button className="btn-secondary btn-sm" onClick={() => setView('dashboard')} style={{ padding: '8px 12px', display: 'flex', alignItems: 'center', gap: '6px' }}>
-              <ArrowLeft size={16} /> Home
-            </button>
-            <button className="btn-secondary btn-sm" onClick={handleHoldCart} disabled={cart.length === 0} style={{ padding: '8px 12px', display: 'flex', alignItems: 'center', gap: '6px' }}>
-              {activeOrderId ? <><Save size={16} /> Update</> : <><PauseCircle size={16} /> Hold</>}
-            </button>
-          </div>
-        </div>
-        
-        <div className="pos-cart-list">
-          {cart.map(item => {
-            const dcAmt = calculateItemDiscount(item);
-            return (
-              <div key={item.productId} className="pos-cart-item">
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                  <div style={{ flex: 1, paddingRight: '10px' }}>
-                    <div style={{ fontWeight: '600', fontSize: '0.95rem', color: 'var(--text-primary)' }}>
-                      {item.productName}
-                    </div>
-                    <div style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', marginTop: '4px' }}>
-                      {item.unitPrice.toLocaleString()} FRW
-                      {dcAmt > 0 && <span style={{ color: 'var(--danger)', marginLeft: '5px', fontWeight: 'bold' }}>(-{dcAmt.toLocaleString()})</span>}
-                    </div>
-                  </div>
-                  
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                    <button onClick={() => updateQuantity(item.productId, -1)} className="pos-qty-btn">-</button>
-                    <span style={{ fontWeight: 'bold', width: '20px', textAlign: 'center', fontSize: '1.1rem' }}>{item.quantity}</span>
-                    <button onClick={() => updateQuantity(item.productId, 1)} className="pos-qty-btn plus">+</button>
-                  </div>
-                </div>
-                
-                {/* Compact Discount Input */}
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '10px', opacity: 0.8 }}>
-                  <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Disc:</span>
-                  <input 
-                    type="text" 
-                    placeholder="% or FRW" 
-                    value={item.discount} 
-                    onChange={e => updateDiscount(item.productId, e.target.value)} 
-                    style={{ padding: '4px 8px', fontSize: '0.8rem', borderRadius: '6px', border: '1px solid var(--border-color)', width: '80px', background: 'transparent' }} 
-                  />
-                </div>
-              </div>
-            );
-          })}
-          {cart.length === 0 ? (
-            <div style={{ textAlign: 'center', color: 'var(--text-secondary)', marginTop: '60px', fontSize: '1.1rem', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '10px' }}>
-              <ShoppingCart size={48} style={{ opacity: 0.3 }} />
-              Cart is empty
-            </div>
-          ) : null}
-        </div>
+        <OrderCart 
+          cart={cart}
+          activeOrderId={activeOrderId}
+          activeOrderName={activeOrderName}
+          setView={setView}
+          handleHoldCart={handleHoldCart}
+          updateQuantity={updateQuantity}
+          updateDiscount={updateDiscount}
+          calculateItemDiscount={calculateItemDiscount}
+        />
 
-        <div className="pos-checkout-area">
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', marginBottom: '20px' }}>
-            <select 
-              value={selectedCustomer} 
-              onChange={e => setSelectedCustomer(e.target.value)} 
-              className="pos-search-input"
-              style={{ padding: '10px 16px' }}
-            >
-              <option value="">Select Customer (Optional)</option>
-              {crmCustomers.map(c => <option key={c.id} value={c.id}>{c.name} ({c.points || 0} pts)</option>)}
-            </select>
-            <input 
-              type="text" 
-              placeholder="Notes (Optional)" 
-              value={notes} 
-              onChange={e => setNotes(e.target.value)} 
-              className="pos-search-input"
-              style={{ padding: '10px 16px' }} 
-            />
-            
-            {selectedCustomer && crmCustomers.find(c => c.id === selectedCustomer)?.points > 0 && (
-              <div style={{ display: 'flex', gap: '10px', alignItems: 'center', background: 'rgba(79, 70, 229, 0.05)', padding: '12px', borderRadius: '12px', border: '1px dashed var(--primary)' }}>
-                <span style={{ fontSize: '0.85rem', color: 'var(--primary)', flex: 1, fontWeight: '600' }}>
-                  Redeem Points (Max {crmCustomers.find(c => c.id === selectedCustomer).points})<br/>
-                  <small style={{ opacity: 0.8 }}>1 pt = 10 FRW off</small>
-                </span>
-                <input 
-                  type="number" 
-                  max={crmCustomers.find(c => c.id === selectedCustomer).points} 
-                  min="0" 
-                  value={redeemPoints} 
-                  onChange={e => setRedeemPoints(Math.min(parseInt(e.target.value) || 0, crmCustomers.find(c => c.id === selectedCustomer).points))} 
-                  style={{ padding: '8px', borderRadius: '8px', border: '1px solid var(--primary)', width: '80px', textAlign: 'center', fontWeight: 'bold' }} 
-                />
-              </div>
-            )}
-          </div>
-
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
-            <span style={{ fontSize: '1.25rem', fontWeight: '700', color: 'var(--text-secondary)' }}>Total</span>
-            <span className="pos-gradient-text">
-              {Math.max(0, totalAmount - (redeemPoints * 10)).toLocaleString()} FRW
-            </span>
-          </div>
-
-          <div style={{ display: 'flex', gap: '12px', marginBottom: '12px' }}>
-            <button 
-              className="btn-primary" 
-              style={{ flex: '1', padding: '16px', borderRadius: '16px', fontWeight: 'bold', display: 'flex', justifyContent: 'center', alignItems: 'center' }}
-              onClick={handleHoldCart}
-              disabled={cart.length === 0}
-            >
-              <ChefHat size={18} style={{ marginRight: '8px' }} /> 
-              {activeOrderId ? 'Update Kitchen' : 'Send to Kitchen'}
-            </button>
-          </div>
-
-          <div style={{ display: 'flex', gap: '12px' }}>
-            <button 
-              className="btn-secondary" 
-              style={{ flex: '0 0 120px', padding: '16px', borderRadius: '16px', fontWeight: 'bold', border: '2px solid var(--border-color)' }}
-              onClick={handlePrintBill}
-              disabled={cart.length === 0}
-            >
-              <Printer size={18} style={{ marginRight: '6px' }} /> Bill
-            </button>
-            <button 
-              className="pos-checkout-btn" 
-              style={{ flex: '1' }}
-              onClick={() => {
-                setPaymentDetails({ Cash: 0, Card: 0, Momo: 0 });
-                setShowPaymentModal(true);
-              }}
-              disabled={cart.length === 0}
-            >
-              Checkout
-            </button>
-          </div>
-        </div>
+        <CheckoutPanel 
+          cart={cart}
+          crmCustomers={crmCustomers}
+          selectedCustomer={selectedCustomer}
+          setSelectedCustomer={setSelectedCustomer}
+          notes={notes}
+          setNotes={setNotes}
+          redeemPoints={redeemPoints}
+          setRedeemPoints={setRedeemPoints}
+          totalAmount={totalAmount}
+          activeOrderId={activeOrderId}
+          handleHoldCart={handleHoldCart}
+          handlePrintBill={handlePrintBill}
+          setShowPaymentModal={setShowPaymentModal}
+          setPaymentDetails={setPaymentDetails}
+        />
       </div>
 
       {showHeldModal && (
@@ -1002,13 +839,13 @@ export default function RestaurantPOS({ currentUser, categories = [], sales = []
             
             {tables.length > 0 ? (
               <div style={{ maxHeight: '60vh', overflowY: 'auto', marginBottom: '20px' }}>
-                {Object.entries(
+                {(Object.entries(
                   tables.reduce((acc, table) => {
                     if (!acc[table.zone]) acc[table.zone] = [];
                     acc[table.zone].push(table);
                     return acc;
-                  }, {})
-                ).map(([zone, zoneTables]) => (
+                  }, {} as any)
+                ) as [string, any[]][]).map(([zone, zoneTables]) => (
                   <div key={zone} style={{ marginBottom: '20px' }}>
                     <h3 style={{ borderBottom: '1px solid var(--border-color)', paddingBottom: '8px', marginBottom: '15px' }}>{zone}</h3>
                     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(120px, 1fr))', gap: '15px' }}>
@@ -1073,3 +910,5 @@ export default function RestaurantPOS({ currentUser, categories = [], sales = []
     </div>
   );
 }
+
+

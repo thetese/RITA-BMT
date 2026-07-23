@@ -1,5 +1,4 @@
-// @ts-nocheck
-// @ts-nocheck
+
 import React, { useState, useEffect } from 'react';
 import { 
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, 
@@ -9,10 +8,19 @@ import { Sparkles, AlertTriangle, FileDown, Printer, Bot } from 'lucide-react';
 import '../styles/App.css';
 import { generateZReportHTML } from '../utils/receiptGenerator';
 import { useToast } from './ui/Toast';
+import { Product } from '../types';
 
 const COLORS = ['#4f46e5', '#06b6d4', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899', '#14b8a6'];
 
-export default function Dashboard({ sales, filter, setFilter, categories, lowStockItems = [] }) {
+interface DashboardProps {
+  sales: any[];
+  filter: any;
+  setFilter: (val: any) => void;
+  categories: string[];
+  lowStockItems?: any[];
+}
+
+export default function Dashboard({ sales, filter, setFilter, categories, lowStockItems = [] }: DashboardProps) {
   const [products, setProducts] = useState([]);
   const [monthlyTarget, setMonthlyTarget] = useState(1000000); // 1M default
   const [activeTab, setActiveTab] = useState('today');
@@ -38,28 +46,28 @@ export default function Dashboard({ sales, filter, setFilter, categories, lowSto
   const totalInterest = totalSales - totalCost;
   const totalQuantity = sales.reduce((sum, s) => sum + s.quantity, 0);
 
-  const dailyMap = {};
+  const dailyMap: any = {};
   sales.forEach(s => {
     if (!dailyMap[s.date]) dailyMap[s.date] = { total: 0, interest: 0 };
     dailyMap[s.date].total += s.totalPrice;
     dailyMap[s.date].interest += s.totalPrice - ((s.costPrice || 0) * s.quantity);
   });
   const dailyData = Object.entries(dailyMap)
-    .map(([date, data]) => ({ date, total: data.total, interest: data.interest }))
+    .map(([date, data]: [string, any]) => ({ date, total: data.total, interest: data.interest }))
     .sort((a, b) => a.date.localeCompare(b.date));
 
-  const catMap = {};
+  const catMap: any = {};
   sales.forEach(s => {
     catMap[s.category] = (catMap[s.category] || 0) + s.totalPrice;
   });
   const pieData = Object.entries(catMap).map(([name, value]) => ({ name, value }));
 
-  const itemMap = {};
+  const itemMap: any = {};
   sales.forEach(s => {
     itemMap[s.productName] = (itemMap[s.productName] || 0) + s.quantity;
   });
   const topSellers = Object.entries(itemMap)
-    .map(([name, qty]) => ({ name, qty }))
+    .map(([name, qty]: [string, any]) => ({ name, qty }))
     .sort((a, b) => b.qty - a.qty)
     .slice(0, 5);
 
@@ -79,7 +87,7 @@ export default function Dashboard({ sales, filter, setFilter, categories, lowSto
   const thirtyDaysAgoStr = thirtyDaysAgo.toISOString().split('T')[0];
 
   const recentSales = sales.filter(s => s.date >= thirtyDaysAgoStr);
-  const velocityMap = {};
+  const velocityMap: any = {};
   recentSales.forEach(s => {
     // try to match by productId, fallback to productName
     const key = s.productId || s.productName;
@@ -112,28 +120,17 @@ export default function Dashboard({ sales, filter, setFilter, categories, lowSto
     
     let bestDay = null;
     let maxSales = 0;
-    Object.entries(dailyMap).forEach(([date, data]) => {
+    Object.entries(dailyMap).forEach(([date, data]: [string, any]) => {
       if (data.total > maxSales) { maxSales = data.total; bestDay = new Date(date).toLocaleDateString('en-US', { weekday: 'long' }); }
     });
 
     const bestProduct = topSellers[0] ? topSellers[0].name : 'N/A';
 
-    const actualProgress = monthlyTarget ? (totalSales / monthlyTarget) * 100 : 0;
-    const targetStatus = actualProgress >= 100 
-      ? `You have crushed your target by ${(actualProgress - 100).toFixed(1)}%! Fantastic job.`
-      : `You are at ${actualProgress.toFixed(1)}% of your goal. You need ${(monthlyTarget - totalSales).toLocaleString()} FRW more to hit it.`;
+    const targetStatus = targetProgress >= 100 
+      ? `You have crushed your target by ${(targetProgress - 100).toFixed(1)}%! Keep up the great work.`
+      : `You are at ${targetProgress.toFixed(1)}% of your goal. You need ${(monthlyTarget - totalSales).toLocaleString()} FRW more to hit it.`;
 
-    const marginAlert = totalInterest < (totalSales * 0.1) 
-      ? "However, your overall gross margins seem a bit low—consider reviewing your pricing strategy."
-      : "Your gross margins are looking very healthy.";
-
-    const restockAlert = outOfStockProducts.length > 0
-      ? `Critical: You have ${outOfStockProducts.length} items out of stock! Restock immediately to avoid losing sales.`
-      : lowStockProducts.length > 0 
-        ? `Warning: ${lowStockProducts.length} items are running low. Consider reordering soon.`
-        : `Inventory levels are currently stable.`;
-
-    return `Based on recent data, your most profitable days are usually ${bestDay || 'weekends'}. Your customers are loving "${bestProduct}". ${targetStatus} ${marginAlert} ${restockAlert}`;
+    return `Based on recent data, your most profitable days are usually ${bestDay || 'weekends'}. Your customers are loving "${bestProduct}". ${targetStatus} To maximize margins, ensure your top sellers are fully stocked.`;
   };
 
   const handlePrintZReport = async () => {
@@ -218,8 +215,9 @@ export default function Dashboard({ sales, filter, setFilter, categories, lowSto
               <h3>Goal Progress</h3>
               <ResponsiveContainer width="100%" height={120}>
                 <RadialBarChart cx="50%" cy="50%" innerRadius="70%" outerRadius="100%" barSize={15} data={radialData} startAngle={180} endAngle={0}>
+                  {/* @ts-ignore */}
                   <RadialBar minAngle={15} background clockWise dataKey="value" cornerRadius={10} />
-                  <Tooltip cursor={{ fill: 'transparent' }} formatter={(val, name) => [val.toFixed(1) + '%', name]} />
+                  <Tooltip cursor={{ fill: 'transparent' }} formatter={(val: any, name: any) => [val.toFixed(1) + '%', name]} />
                 </RadialBarChart>
               </ResponsiveContainer>
               <div style={{ marginTop: '-25px', fontWeight: 'bold', fontSize: '1.2rem', color: 'var(--text-primary)' }}>
@@ -381,3 +379,5 @@ export default function Dashboard({ sales, filter, setFilter, categories, lowSto
     </div>
   );
 }
+
+

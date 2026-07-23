@@ -36,18 +36,12 @@ function launchWindows() {
     // Default fallback: open one window on primary display
     createSingleWindow(displays[0].id, displays[0].bounds, 'dashboard', true);
   } else {
-    let windowCreated = false;
     mapping.forEach(m => {
       const d = displays.find(disp => disp.id === m.displayId);
       if (d) {
         createSingleWindow(d.id, d.bounds, m.page, m.isMain);
-        windowCreated = true;
       }
     });
-    // Failsafe: if display IDs changed and no window was created
-    if (!windowCreated) {
-      createSingleWindow(displays[0].id, displays[0].bounds, 'dashboard', true);
-    }
   }
 }
 
@@ -188,38 +182,7 @@ ipcMain.handle('print:receipt', async (event, htmlContent, printerName) => {
 
   await printWindow.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(htmlContent)}`);
   
-  return new Promise(async (resolve) => {
-    // If the selected printer is a PDF printer, use printToPDF and prompt user to save
-    if (printerName && printerName.toLowerCase().includes('pdf')) {
-      try {
-        const data = await printWindow.webContents.printToPDF({
-          printBackground: true,
-          pageSize: 'A4'
-        });
-        const { dialog } = require('electron');
-        const fs = require('fs');
-        const { filePath } = await dialog.showSaveDialog({
-          title: 'Save Receipt as PDF',
-          defaultPath: 'receipt.pdf',
-          filters: [{ name: 'PDF Documents', extensions: ['pdf'] }]
-        });
-        
-        if (filePath) {
-          fs.writeFileSync(filePath, data);
-          printWindow.close();
-          resolve({ success: true });
-        } else {
-          printWindow.close();
-          resolve({ success: false, errorType: 'cancelled' });
-        }
-      } catch (err: any) {
-        printWindow.close();
-        resolve({ success: false, errorType: err.message });
-      }
-      return;
-    }
-
-    // Normal thermal/hardware printer logic
+  return new Promise((resolve) => {
     printWindow.webContents.print({ silent: true, deviceName: printerName }, (success, errorType) => {
       printWindow.close();
       resolve({ success, errorType });

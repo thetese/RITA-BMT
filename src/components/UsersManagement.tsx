@@ -11,7 +11,8 @@ const defaultUser = {
   securityQuestion: '',
   securityAnswer: '',
   hourlyRate: 0,
-  commissionRate: 0
+  commissionRate: 0,
+  taxRate: 0
 };
 
 export default function UsersManagement({ currentUser }) {
@@ -55,7 +56,8 @@ export default function UsersManagement({ currentUser }) {
           securityQuestion: form.securityQuestion,
           securityAnswer: form.securityAnswer || fullUser.securityAnswer, // do not clear if empty
           hourlyRate: form.hourlyRate,
-          commissionRate: form.commissionRate
+          commissionRate: form.commissionRate,
+          taxRate: form.taxRate
         }, currentUser?.id);
       } else {
         if (form.password.length < 4) {
@@ -70,7 +72,8 @@ export default function UsersManagement({ currentUser }) {
           securityQuestion: form.securityQuestion,
           securityAnswer: form.securityAnswer,
           hourlyRate: form.hourlyRate,
-          commissionRate: form.commissionRate
+          commissionRate: form.commissionRate,
+          taxRate: form.taxRate
         }, currentUser?.id);
       }
       setForm(defaultUser);
@@ -93,7 +96,8 @@ export default function UsersManagement({ currentUser }) {
       securityQuestion: fullUser.securityQuestion || '',
       securityAnswer: '', // Hidden
       hourlyRate: fullUser.hourlyRate || 0,
-      commissionRate: fullUser.commissionRate || 0
+      commissionRate: fullUser.commissionRate || 0,
+      taxRate: fullUser.taxRate || 0
     });
     setEditingId(fullUser.id);
     setResettingPasswordId(null);
@@ -179,6 +183,11 @@ export default function UsersManagement({ currentUser }) {
           <div className="form-row">
             <label>Commission Rate (%)</label>
             <input name="commissionRate" type="number" min="0" max="100" step="any" value={form.commissionRate || 0} onChange={handleChange} />
+          </div>
+
+          <div className="form-row">
+            <label>Tax Withholding Rate (%)</label>
+            <input name="taxRate" type="number" min="0" max="100" step="any" value={form.taxRate || 0} onChange={handleChange} />
           </div>
 
           <div className="form-actions">

@@ -1,6 +1,6 @@
 {
   "name": "rita-sales-reports",
-  "version": "1.0.0",
+  "version": "2.0.0",
   "description": "Business Sales Reports Desktop App",
   "main": "dist-electron/main.js",
   "scripts": {
@@ -69,13 +69,17 @@
     "helmet": "^8.2.0",
     "html2canvas": "^1.4.1",
     "jsbarcode": "^3.12.3",
+    "jsonwebtoken": "^9.0.3",
     "jspdf": "^4.2.1",
     "jspdf-autotable": "^5.0.8",
     "lucide-react": "^1.23.0",
     "node-cron": "^4.6.0",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
+    "react-router-dom": "^7.18.1",
     "recharts": "^2.10.0",
+    "socket.io": "^4.8.3",
+    "socket.io-client": "^4.8.3",
     "stripe": "^22.3.0",
     "umzug": "^3.8.3",
     "uuid": "^9.0.0",
@@ -83,6 +87,7 @@
     "zustand": "^5.0.14"
   },
   "devDependencies": {
+    "@types/jsonwebtoken": "^9.0.10",
     "@types/node": "^26.1.1",
     "@types/react": "^18.3.31",
     "@types/react-dom": "^18.3.7",

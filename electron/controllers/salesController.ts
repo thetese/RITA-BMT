@@ -60,6 +60,9 @@ export const registerSalesControllers = (ipcMain: IpcMain, store: any) => {
   ipcMain.handle('products:update', (_, product, userId) => store.updateProduct(product, userId));
   ipcMain.handle('products:delete', (_, id, userId) => store.deleteProduct(id, userId));
   ipcMain.handle('inventory:getLowStock', () => store.getLowStockItems());
+  ipcMain.handle('inventory:getWarehouses', () => store.getWarehouses());
+  ipcMain.handle('inventory:addWarehouse', (_, warehouse) => store.addWarehouse(warehouse));
+  ipcMain.handle('inventory:getWarehouseStock', (_, id) => store.getWarehouseStock(id));
 
   // Stock Movements
   ipcMain.handle('stock:getAll', () => store.getStockMovements());
@@ -91,5 +94,30 @@ export const registerSalesControllers = (ipcMain: IpcMain, store: any) => {
   // Purchase Orders
   ipcMain.handle('purchaseOrders:getAll', () => store.getPurchaseOrders());
   ipcMain.handle('purchaseOrders:add', (_, po, userId) => store.addPurchaseOrder(po, userId));
+  ipcMain.handle('purchaseOrders:updateStatus', (_, id, status, userId) => store.updatePurchaseOrderStatus(id, status, userId));
   ipcMain.handle('purchaseOrders:delete', (_, id, userId) => store.deletePurchaseOrder(id, userId));
+
+  // Accounting
+  ipcMain.handle('accounting:getAccounts', () => store.getAccounts());
+  ipcMain.handle('accounting:addAccount', (_, account) => store.addAccount(account));
+  ipcMain.handle('accounting:getJournalEntries', () => store.getJournalEntries());
+  ipcMain.handle('accounting:addJournalEntry', (_, entry) => store.addJournalEntry(entry));
+
+  // CRM
+  ipcMain.handle('crm:getLeads', () => store.getLeads());
+  ipcMain.handle('crm:addLead', (_, lead) => store.addLead(lead));
+  ipcMain.handle('crm:updateLeadStatus', (_, id, status) => store.updateLeadStatus(id, status));
+  ipcMain.handle('crm:getActivities', (_, leadId) => store.getCrmActivities(leadId));
+  ipcMain.handle('crm:addActivity', (_, activity, userId) => store.addCrmActivity(activity, userId));
+  ipcMain.handle('crm:convertLead', (_, leadId, userId) => store.convertLeadToCustomer(leadId, userId));
+
+  // Stock Transfers
+  ipcMain.handle('inventory:getStockTransfers', () => store.getStockTransfers());
+  ipcMain.handle('inventory:addStockTransfer', (_, transfer, userId) => store.addStockTransfer(transfer, userId));
+  ipcMain.handle('inventory:updateStockTransferStatus', (_, id, status, userId) => store.updateStockTransferStatus(id, status, userId));
+
+  // HR
+  ipcMain.handle('hr:getLeaveRequests', () => store.getLeaveRequests());
+  ipcMain.handle('hr:addLeaveRequest', (_, req, userId) => store.addLeaveRequest(req, userId));
+  ipcMain.handle('hr:updateLeaveRequestStatus', (_, id, status) => store.updateLeaveRequestStatus(id, status));
 };
