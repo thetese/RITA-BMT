@@ -1,13 +1,15 @@
 {
   "name": "rita-sales-reports",
-  "version": "1.0.1",
+  "version": "1.0.0",
   "description": "Business Sales Reports Desktop App",
-  "main": "electron/main.js",
+  "main": "dist-electron/main.js",
   "scripts": {
     "dev": "vite",
     "build": "vite build",
-    "electron:dev": "concurrently \"vite\" \"wait-on http://localhost:5173 && electron . --dev\"",
-    "electron:build": "vite build && electron-builder"
+    "test": "electron-mocha test/**/*.test.js",
+    "electron:dev": "concurrently \"tsc -p tsconfig.node.json -w\" \"vite\" \"wait-on http://localhost:5173 && wait-on dist-electron/main.js && electron . --dev\"",
+    "electron:build": "tsc -p tsconfig.node.json && vite build && electron-builder",
+    "lint": "tsc --noEmit"
   },
   "build": {
     "appId": "com.rita.salesreports",
@@ -15,41 +17,85 @@
     "directories": {
       "output": "release"
     },
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "fidele",
+        "repo": "rita-sales-reports"
+      }
+    ],
+    "mac": {
+      "target": [
+        "dmg"
+      ]
+    },
+    "linux": {
+      "target": [
+        "AppImage"
+      ]
+    },
     "win": {
       "target": [
         "nsis"
-      ]
+      ],
+      "icon": "build/icon-256.png"
     },
     "nsis": {
       "oneClick": false,
-      "perMachine": false,
+      "perMachine": true,
       "allowToChangeInstallationDirectory": true,
-      "createDesktopShortcut": true
+      "runAfterFinish": false,
+      "createDesktopShortcut": true,
+      "shortcutName": "Rita App",
+      "include": "build/installer.nsh"
     },
     "files": [
       "dist/**/*",
-      "electron/**/*"
+      "dist-electron/**/*",
+      "build/icon-256.png"
     ]
   },
   "dependencies": {
+    "@supabase/supabase-js": "^2.110.0",
+    "assert-plus": "^1.0.0",
+    "bcryptjs": "^3.0.3",
     "better-sqlite3": "^12.11.1",
+    "cors": "^2.8.6",
+    "electron-updater": "^6.8.9",
+    "escpos": "^3.0.0-alpha.6",
+    "escpos-usb": "^3.0.0-alpha.4",
+    "express": "^5.2.1",
+    "express-rate-limit": "^8.5.2",
+    "helmet": "^8.2.0",
     "html2canvas": "^1.4.1",
+    "jsbarcode": "^3.12.3",
     "jspdf": "^4.2.1",
     "jspdf-autotable": "^5.0.8",
+    "lucide-react": "^1.23.0",
+    "node-cron": "^4.6.0",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
     "recharts": "^2.10.0",
+    "stripe": "^22.3.0",
+    "umzug": "^3.8.3",
     "uuid": "^9.0.0",
-    "xlsx": "^0.18.5"
+    "xlsx": "^0.18.5",
+    "zustand": "^5.0.14"
   },
   "devDependencies": {
-    "@types/react": "^18.2.0",
-    "@types/react-dom": "^18.2.0",
+    "@types/node": "^26.1.1",
+    "@types/react": "^18.3.31",
+    "@types/react-dom": "^18.3.7",
     "@vitejs/plugin-react": "^4.2.0",
+    "chai": "^4.5.0",
     "concurrently": "^8.2.0",
-    "electron": "^28.0.0",
+    "electron": "^43.1.0",
     "electron-builder": "^24.9.0",
+    "electron-mocha": "^13.1.0",
+    "ts-node": "^10.9.2",
+    "typescript": "^7.0.2",
     "vite": "^5.0.0",
+    "vitest": "^4.1.10",
     "wait-on": "^7.2.0"
   }
 }

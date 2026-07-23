@@ -1,0 +1,1075 @@
+import React, { useState, useEffect, useMemo, useRef } from 'react';
+import { 
+  Printer, Banknote, Smartphone, CreditCard, Search, X, Trash2, Mic, PauseCircle,
+  ShoppingCart, FolderOpen, Save, Plus, ArrowLeft, ChefHat
+} from 'lucide-react';
+import { v4 as uuidv4 } from 'uuid';
+import { generateThermalReceiptHTML, generateProformaHTML } from '../utils/receiptGenerator';
+import { vsdcApi } from '../utils/vsdcMock';
+import ShiftManager from './ShiftManager';
+
+export default function RestaurantPOS({ currentUser, categories = [], sales = [], onSave }) {
+  const [waiters, setWaiters] = useState([]);
+  const [selectedWaiter, setSelectedWaiter] = useState(null);
+  const [view, setView] = useState('waiterSelect'); // 'waiterSelect', 'dashboard', 'pos'
+  const [products, setProducts] = useState([]);
+  const [cart, setCart] = useState([]);
+  const [filterCategory, setFilterCategory] = useState('');
+  const [search, setSearch] = useState('');
+  
+  const [paymentMethod, setPaymentMethod] = useState('Cash'); // Legacy, we will move to complex
+  const [customerName, setCustomerName] = useState('');
+  const [crmCustomers, setCrmCustomers] = useState([]);
+  const [selectedCustomer, setSelectedCustomer] = useState('');
+  const [redeemPoints, setRedeemPoints] = useState(0);
+  const [notes, setNotes] = useState('');
+
+  const [activeOrderId, setActiveOrderId] = useState(null);
+  const [activeOrderName, setActiveOrderName] = useState('');
+
+  const [heldCarts, setHeldCarts] = useState([]);
+  const [showHeldModal, setShowHeldModal] = useState(false);
+
+  const [showPaymentModal, setShowPaymentModal] = useState(false);
+  const [paymentDetails, setPaymentDetails] = useState({ Cash: 0, Card: 0, Momo: 0 });
+  const [payActiveField, setPayActiveField] = useState('Cash');
+
+  const [showTableModal, setShowTableModal] = useState(false);
+  const [tableNameInput, setTableNameInput] = useState('');
+  const [tables, setTables] = useState([]);
+
+  const [activeShift, setActiveShift] = useState(null);
+  const [shiftMode, setShiftMode] = useState(null);
+
+  const loadProducts = async () => {
+    if (!window.api) return;
+    const data = await window.api.getProducts();
+    setProducts(data);
+  };
+
+  const loadData = async () => {
+    loadProducts();
+    if (window.api) {
+      const wData = await window.api.getAccounters();
+      setWaiters(wData);
+      const hCarts = await window.api.getHeldCarts();
+      setHeldCarts(hCarts);
+      const cData = await window.api.getCustomers();
+      setCrmCustomers(cData);
+      const tData = await window.api.getTables();
+      setTables(tData);
+      if (currentUser?.id) {
+        const shift = await window.api.getActiveShift(currentUser.id);
+        setActiveShift(shift);
+      }
+    }
+  };
+
+  useEffect(() => { loadData(); }, []);
+
+  // Barcode Scanner Listener
+  const barcodeBufferRef = React.useRef('');
+  const lastKeyTimeRef = React.useRef(Date.now());
+
+  const playBeep = (type = 'success') => {
+    try {
+      const AudioContext = window.AudioContext || window.webkitAudioContext;
+      if (!AudioContext) return;
+      const ctx = new AudioContext();
+      const osc = ctx.createOscillator();
+      const gainNode = ctx.createGain();
+      osc.connect(gainNode);
+      gainNode.connect(ctx.destination);
+      if (type === 'success') {
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(800, ctx.currentTime);
+        gainNode.gain.setValueAtTime(0.1, ctx.currentTime);
+        osc.start();
+        osc.stop(ctx.currentTime + 0.1);
+      } else {
+        osc.type = 'sawtooth';
+        osc.frequency.setValueAtTime(300, ctx.currentTime);
+        gainNode.gain.setValueAtTime(0.1, ctx.currentTime);
+        osc.start();
+        osc.stop(ctx.currentTime + 0.3);
+      }
+    } catch(e) {}
+  };
+
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      // Ignore if user is typing in an input
+      if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.tagName === 'SELECT') return;
+      // Only process scans if actively on the POS checkout screen
+      if (view !== 'pos') return;
+
+      const currentTime = Date.now();
+      if (currentTime - lastKeyTimeRef.current > 50) {
+        barcodeBufferRef.current = '';
+      }
+      lastKeyTimeRef.current = currentTime;
+
+      if (e.key === 'Enter') {
+        if (barcodeBufferRef.current.length > 0) {
+          const scannedCode = barcodeBufferRef.current;
+          
+          // Check for standard match
+          let foundProduct = products.find(p => p.barcode === scannedCode);
+          let priceOverride = null;
+          let weightOverride = null;
+
+          // Check for price-embedded barcode (e.g., EAN-13 starting with 20-29)
+          // Format typically: 20 IIIII PPPPP C  (20 + 5 digit item code + 5 digit price/weight + 1 digit checksum)
+          if (!foundProduct && scannedCode.length === 13 && /^2[0-9]/.test(scannedCode)) {
+            const itemCodePrefix = scannedCode.substring(0, 7); // 20 + 5 digits
+            const embeddedValueStr = scannedCode.substring(7, 12);
+            
+            // Try finding a product whose barcode starts with this prefix 
+            // (e.g., store product with barcode '2000012000000' to match)
+            foundProduct = products.find(p => p.barcode && p.barcode.startsWith(itemCodePrefix));
+            
+            if (foundProduct) {
+              // Assume embedded value is price (with 2 decimal places typically, but could be whole FRW depending on setup)
+              // Let's assume it's whole FRW for retail in Rwanda, or divide by 100 if necessary.
+              // Assuming direct FRW value for simplicity:
+              priceOverride = parseInt(embeddedValueStr, 10);
+            }
+          }
+
+          if (foundProduct) {
+            addToCart(foundProduct, priceOverride);
+            playBeep('success');
+          } else {
+            playBeep('error');
+            alert(`Barcode ${scannedCode} not found in database!`);
+          }
+          barcodeBufferRef.current = '';
+        }
+      } else if (e.key.length === 1) {
+        barcodeBufferRef.current += e.key;
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [products, view]);
+
+  const handleOpenShift = async (cash) => {
+    const shift = await window.api.openShift(currentUser.id, cash);
+    setActiveShift(shift);
+  };
+
+  const handleCloseShift = async (cash) => {
+    await window.api.closeShift(activeShift.id, cash);
+    setActiveShift(null);
+    setShiftMode(null);
+  };
+
+  if (currentUser?.id && !activeShift) {
+    return <ShiftManager mode="open" onSubmit={handleOpenShift} />;
+  }
+
+  if (shiftMode === 'close' && activeShift) {
+    return <ShiftManager mode="close" shift={activeShift} onSubmit={handleCloseShift} onCancel={() => setShiftMode(null)} />;
+  }
+
+  const addToCart = (product, priceOverride = null) => {
+    if (product.stockQuantity <= 0 && !priceOverride) return; // Cannot add out of stock items, unless scale item
+    
+    setCart(prev => {
+      const unitPriceToUse = priceOverride !== null ? priceOverride : product.unitPrice;
+      const quantityToUse = priceOverride !== null ? 1 : 1; // Scale items add 1 unit representing the package
+      
+      const existing = prev.find(item => item.productId === product.id && item.unitPrice === unitPriceToUse);
+      if (existing && priceOverride === null) {
+        if (existing.quantity >= product.stockQuantity) {
+          // Cannot add more than in stock
+          return prev;
+        }
+        return prev.map(item => 
+          item.productId === product.id 
+            ? { ...item, quantity: item.quantity + 1 } 
+            : item
+        );
+      } else {
+        return [...prev, {
+          productId: product.id + (priceOverride ? '-' + Date.now() : ''), // unique ID if price override
+          originalProductId: product.id,
+          productName: product.productName + (priceOverride ? ' (Scale Item)' : ''),
+          category: product.category,
+          unitPrice: unitPriceToUse,
+          costPrice: product.costPrice,
+          taxTyCd: product.taxTyCd || 'B',
+          itemCd: product.itemCd,
+          itemClsCd: product.itemClsCd,
+          quantity: quantityToUse,
+          discount: '',
+          status: 'pending'
+        }];
+      }
+    });
+  };
+
+  const updateQuantity = (productId, delta) => {
+    setCart(prev => {
+      return prev.map(item => {
+        if (item.productId === productId) {
+          const newQ = item.quantity + delta;
+          const product = products.find(p => p.id === productId);
+          if (product && newQ > product.stockQuantity) {
+            return item; // Cannot exceed stock
+          }
+          return { ...item, quantity: newQ > 0 ? newQ : 0 };
+        }
+        return item;
+      }).filter(item => item.quantity > 0);
+    });
+  };
+
+  const handleHoldCart = async () => {
+    if (cart.length === 0) return;
+    
+    try {
+      if (activeOrderId) {
+        await window.api.updateHeldCart(activeOrderId, {
+          cartData: JSON.stringify(cart)
+        });
+        
+        setCart([]);
+        setCustomerName('');
+        setNotes('');
+        setActiveOrderId(null);
+        setActiveOrderName('');
+        setView('waiterSelect'); // Auto-logout back to select
+        setSelectedWaiter(null);
+        loadData();
+      } else {
+        // Show modal instead of prompt
+        setTableNameInput(customerName || '');
+        setShowTableModal(true);
+      }
+    } catch (err) {
+      alert("Error saving order: " + err.message + "\n\nPlease CLOSE and RESTART the app fully to apply updates.");
+    }
+  };
+
+  const confirmSaveTable = async () => {
+    if (!tableNameInput.trim()) {
+      alert("Please enter a name for the table.");
+      return;
+    }
+    try {
+      await window.api.addHeldCart({
+        name: tableNameInput,
+        cartData: JSON.stringify(cart),
+        waiterName: selectedWaiter.name
+      });
+      setShowTableModal(false);
+      setCart([]);
+      setCustomerName('');
+      setNotes('');
+      setActiveOrderId(null);
+      setActiveOrderName('');
+      setView('waiterSelect'); // Auto-logout back to select
+      setSelectedWaiter(null);
+      loadData();
+    } catch (err) {
+      alert("Error saving order: " + err.message);
+    }
+  };
+
+  const loadHeldCarts = async () => {
+    const carts = await window.api.getHeldCarts();
+    setHeldCarts(carts);
+    setShowHeldModal(true);
+  };
+
+  const restoreCart = async (heldCart) => {
+    if (cart.length > 0 && !activeOrderId) {
+      if (!confirm("This will overwrite the current active cart. Continue?")) return;
+    }
+    setCart(JSON.parse(heldCart.cartData));
+    setActiveOrderId(heldCart.id);
+    setActiveOrderName(heldCart.name);
+    setShowHeldModal(false);
+    setView('pos');
+  };
+
+  const deleteHeldCart = async (id) => {
+    if (!confirm("Delete this open order permanently?")) return;
+    await window.api.deleteHeldCart(id);
+    if (activeOrderId === id) {
+      setActiveOrderId(null);
+      setActiveOrderName('');
+      setCart([]);
+    }
+    const carts = await window.api.getHeldCarts();
+    setHeldCarts(carts);
+  };
+
+  const handlePrintBill = async () => {
+    if (cart.length === 0) return;
+    try {
+      const receiptCart = cart.map(item => ({
+        ...item,
+        discountAmount: calculateItemDiscount(item)
+      }));
+      
+      const businessName = await window.api.getSetting('businessName') || '';
+      const businessAddress = await window.api.getSetting('businessAddress') || '';
+      const businessPhone = await window.api.getSetting('businessPhone') || '';
+      
+      const htmlReceipt = generateProformaHTML(
+        receiptCart, 
+        totalAmount, 
+        customerName, 
+        selectedWaiter.name,
+        { businessName, businessAddress, businessPhone },
+        activeOrderName
+      );
+
+      const printerName = await window.api.getSetting('receiptPrinter');
+      const printResult = await window.api.printReceipt(htmlReceipt, printerName || '');
+      
+      if (!printResult.success) {
+        alert('Failed to print bill: ' + (printResult.errorType || 'Unknown error'));
+      }
+    } catch (err) {
+      alert("Error printing bill: " + err.message);
+    }
+  };
+
+  const updateDiscount = (productId, discountVal) => {
+    setCart(prev => {
+      return prev.map(item => {
+        if (item.productId === productId) {
+          return { ...item, discount: discountVal };
+        }
+        return item;
+      });
+    });
+  };
+
+  const calculateItemDiscount = (item) => {
+    const splyAmt = item.quantity * item.unitPrice;
+    if (!item.discount) return 0;
+    if (item.discount.includes('%')) {
+      const pct = parseFloat(item.discount) || 0;
+      return (splyAmt * pct) / 100;
+    }
+    return parseFloat(item.discount) || 0;
+  };
+
+  const totalAmount = cart.reduce((sum, item) => sum + ((item.quantity * item.unitPrice) - calculateItemDiscount(item)), 0);
+  const totalPaid = (parseFloat(paymentDetails.Cash) || 0) + (parseFloat(paymentDetails.Card) || 0) + (parseFloat(paymentDetails.Momo) || 0);
+  const finalTotalAmount = Math.max(0, totalAmount - (redeemPoints * 10));
+  const changeDue = totalPaid - finalTotalAmount;
+
+  const handleCheckout = async () => {
+    if (cart.length === 0) return;
+    if (totalPaid < totalAmount) {
+      alert("Insufficient payment amount.");
+      return;
+    }
+
+    try {
+      const receiptId = uuidv4();
+      const dateStr = new Date().toISOString().split('T')[0];
+      
+      const tin = await window.api.getSetting('tin') || "999999999";
+      const businessName = await window.api.getSetting('businessName') || '';
+      const businessAddress = await window.api.getSetting('businessAddress') || '';
+      const businessPhone = await window.api.getSetting('businessPhone') || '';
+      
+      let taxblAmtA = 0;
+      let taxblAmtB = 0;
+      let taxAmtB = 0;
+
+      const itemList = cart.map((item, index) => {
+        const itemTot = item.quantity * item.unitPrice;
+        const dcAmt = calculateItemDiscount(item);
+        const dcRt = item.discount.includes('%') ? parseFloat(item.discount) || 0 : 0;
+        
+        const afterDiscount = itemTot - dcAmt;
+        let taxAmt = 0;
+        let taxbl = afterDiscount;
+        
+        if (item.taxTyCd === 'B') {
+           taxAmt = afterDiscount - (afterDiscount / 1.18);
+           taxbl = afterDiscount - taxAmt;
+           taxblAmtB += taxbl;
+           taxAmtB += taxAmt;
+        } else {
+           taxblAmtA += taxbl;
+        }
+        
+        return {
+          itemSeq: index + 1,
+          itemCd: item.itemCd || "RW2NTBA0000012",
+          itemClsCd: item.itemClsCd || "5059690800",
+          itemNm: item.productName,
+          bcd: null,
+          pkgUnitCd: "NT",
+          pkg: 1,
+          qtyUnitCd: "U",
+          qty: item.quantity,
+          prc: item.unitPrice,
+          splyAmt: itemTot,
+          dcRt: dcRt,
+          dcAmt: dcAmt,
+          taxTyCd: item.taxTyCd,
+          taxblAmt: taxbl,
+          taxAmt: taxAmt,
+          totAmt: afterDiscount
+        };
+      });
+
+      const vsdcPayload = {
+        tin: tin,
+        bhfId: "00",
+        invcNo: 1,
+        orgInvcNo: 0,
+        custTin: "",
+        custNm: customerName,
+        salesTyCd: "N",
+        rcptTyCd: "S",
+        // Logic for primary payment method for VSDC
+        pmtTyCd: paymentDetails.Cash >= paymentDetails.Card && paymentDetails.Cash >= paymentDetails.Momo ? "01" : paymentDetails.Card >= paymentDetails.Momo ? "02" : "04",
+        salesSttsCd: "02",
+        cfmDt: dateStr.replace(/-/g, '') + "120000",
+        salesDt: dateStr.replace(/-/g, ''),
+        stockRlsDt: dateStr.replace(/-/g, '') + "120000",
+        totItemCnt: cart.length,
+        taxblAmtA: taxblAmtA,
+        taxblAmtB: taxblAmtB,
+        taxblAmtC: 0,
+        taxblAmtD: 0,
+        taxRtA: 0,
+        taxRtB: 18,
+        taxRtC: 0,
+        taxRtD: 0,
+        taxAmtA: 0,
+        taxAmtB: taxAmtB,
+        taxAmtC: 0,
+        taxAmtD: 0,
+        totTaxblAmt: taxblAmtA + taxblAmtB,
+        totTaxAmt: taxAmtB,
+        totAmt: totalAmount,
+        itemList: itemList
+      };
+
+      const vsdcResponse = await vsdcApi.saveSales(vsdcPayload);
+      const rcptSign = vsdcResponse.data.rcptSign;
+      const intrlData = vsdcResponse.data.intrlData;
+      const rcptNo = vsdcResponse.data.rcptNo;
+
+      // 1. Add each sale to DB
+      for (const item of cart) {
+        const dcAmt = calculateItemDiscount(item);
+        const dcRt = item.discount.includes('%') ? parseFloat(item.discount) || 0 : 0;
+        const finalPrice = (item.quantity * item.unitPrice) - dcAmt;
+
+        await window.api.addSale({
+          productId: item.originalProductId || item.productId,
+          productName: item.productName,
+          category: item.category,
+          quantity: item.quantity,
+          unitPrice: item.unitPrice,
+          costPrice: item.costPrice,
+          totalPrice: finalPrice - (redeemPoints > 0 ? (redeemPoints * 10 / cart.length) : 0), // spread discount
+          date: dateStr,
+          customerName: selectedCustomer ? crmCustomers.find(c => c.id === selectedCustomer)?.name : '',
+          customerId: selectedCustomer || null,
+          notes: notes,
+          paymentMethod: paymentDetails.Cash >= paymentDetails.Card && paymentDetails.Cash >= paymentDetails.Momo ? 'Cash' : paymentDetails.Card >= paymentDetails.Momo ? 'Card' : 'Mobile Money',
+          paymentDetails: JSON.stringify({
+            Cash: parseFloat(paymentDetails.Cash) || 0,
+            Card: parseFloat(paymentDetails.Card) || 0,
+            "Mobile Money": parseFloat(paymentDetails.Momo) || 0
+          }),
+          discountAmount: dcAmt,
+          discountRate: dcRt,
+          receiptId: receiptId,
+          receiptSignature: rcptSign,
+          internalData: intrlData,
+          receiptNo: rcptNo,
+          waiterName: selectedWaiter.name
+        }, currentUser.id);
+      }
+
+      if (redeemPoints > 0 && selectedCustomer) {
+        await window.api.deductCustomerPoints(selectedCustomer, redeemPoints);
+      }
+
+      // 2. Generate Receipt HTML
+      const receiptCart = cart.map(item => ({
+        ...item,
+        discountAmount: calculateItemDiscount(item)
+      }));
+
+      const htmlReceipt = generateThermalReceiptHTML(
+        receiptCart, 
+        totalAmount, 
+        receiptId, 
+        paymentMethod, 
+        customerName, 
+        selectedWaiter.name,
+        {
+          tin,
+          businessName,
+          businessAddress,
+          businessPhone,
+          rcptSign,
+          intrlData,
+          rcptNo,
+          sdcId: vsdcResponse.data.sdcId,
+          mrcNo: vsdcResponse.data.mrcNo,
+          taxblAmtA,
+          taxblAmtB,
+          taxAmtB
+        },
+        {
+          Cash: parseFloat(paymentDetails.Cash) || 0,
+          Card: parseFloat(paymentDetails.Card) || 0,
+          "Mobile Money": parseFloat(paymentDetails.Momo) || 0
+        }
+      );
+
+      // 3. Print
+      const printerName = await window.api.getSetting('receiptPrinter');
+      const printResult = await window.api.printReceipt(htmlReceipt, printerName || '');
+      
+      if (printResult.success) {
+        alert('Checkout complete and receipt printed!');
+      } else {
+        alert('Checkout complete, but printing failed: ' + (printResult.errorType || 'Unknown error'));
+      }
+
+      // 4. Clear cart and active order
+      if (activeOrderId) {
+        await window.api.deleteHeldCart(activeOrderId);
+      }
+      setCart([]);
+      setCustomerName('');
+      setNotes('');
+      setPaymentMethod('Cash');
+      setPaymentDetails({ Cash: 0, Card: 0, Momo: 0 });
+      setShowPaymentModal(false);
+      setActiveOrderId(null);
+      setActiveOrderName('');
+      setView('waiterSelect');
+      setSelectedWaiter(null);
+      loadData(); // refresh stock and tables
+      if (onSave) onSave(); // tell App.jsx to reload sales
+
+    } catch (err) {
+      alert("Error during checkout: " + err.message);
+    }
+  };
+
+  const filteredProducts = products.filter(p => {
+    if (filterCategory && p.category !== filterCategory) return false;
+    if (search && !p.productName.toLowerCase().includes(search.toLowerCase())) return false;
+    return true;
+  });
+
+  if (view === 'waiterSelect') {
+    return (
+      <div style={{ padding: '20px', maxWidth: '800px', margin: '0 auto', textAlign: 'center', display: 'flex', flexDirection: 'column', height: '100%' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '40px' }}>
+          <h1 style={{ fontSize: '2.5rem', margin: 0 }}>Select Waiter</h1>
+          <button className="btn-danger" style={{ padding: '10px 20px', fontSize: '1.2rem', borderRadius: '8px' }} onClick={() => setShiftMode('close')}>Close Shift</button>
+        </div>
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '20px', justifyContent: 'center' }}>
+          {waiters.map(w => (
+            <button
+              key={w.id}
+              onClick={() => {
+                setSelectedWaiter(w);
+                setView('dashboard');
+              }}
+              style={{
+                padding: '30px 40px',
+                fontSize: '1.5rem',
+                borderRadius: '16px',
+                border: 'none',
+                background: 'var(--primary)',
+                color: '#fff',
+                cursor: 'pointer',
+                boxShadow: '0 4px 12px rgba(0,0,0,0.1)',
+                minWidth: '200px'
+              }}
+            >
+              {w.name}
+            </button>
+          ))}
+          {waiters.length === 0 && (
+            <div style={{ color: 'var(--text-secondary)' }}>No team members configured. Ask Admin to add people to the Team tab.</div>
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  if (view === 'dashboard') {
+    const myOpenOrders = heldCarts.filter(hc => hc.waiterName === selectedWaiter.name);
+    // filter sales for today
+    const today = new Date().toISOString().split('T')[0];
+    const myClosedOrders = sales ? sales.filter(s => s.waiterName === selectedWaiter.name && s.date && s.date.startsWith(today)) : [];
+
+    return (
+      <div style={{ padding: '20px', maxWidth: '1000px', margin: '0 auto', width: '100%' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '30px' }}>
+          <h1 style={{ fontSize: '2.5rem', margin: 0 }}>Welcome, {selectedWaiter.name}!</h1>
+          <button className="btn-secondary" onClick={() => { setView('waiterSelect'); setSelectedWaiter(null); }}>
+            Switch Waiter
+          </button>
+        </div>
+
+        <button 
+          className="btn-primary" 
+          style={{ width: '100%', padding: '25px', fontSize: '1.8rem', borderRadius: '16px', marginBottom: '40px' }}
+          onClick={() => {
+            setCart([]);
+            setActiveOrderId(null);
+            setActiveOrderName('');
+            setView('pos');
+          }}
+        >
+          ➕ Start New Order
+        </button>
+
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '30px' }}>
+          {/* Open Orders */}
+          <div style={{ background: '#fff', padding: '20px', borderRadius: '12px', boxShadow: '0 4px 12px rgba(0,0,0,0.05)' }}>
+            <h2 style={{ borderBottom: '2px solid var(--border-color)', paddingBottom: '10px' }}>Your Open Tables</h2>
+            <div style={{ marginTop: '15px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+              {myOpenOrders.length === 0 ? (
+                <div style={{ color: 'var(--text-secondary)' }}>No open tables.</div>
+              ) : (
+                myOpenOrders.map(hc => {
+                  const items = JSON.parse(hc.cartData);
+                  const qty = items.reduce((sum, i) => sum + i.quantity, 0);
+                  const tot = items.reduce((sum, i) => sum + (i.quantity * i.unitPrice), 0);
+                  return (
+                    <div key={hc.id} style={{ padding: '15px', border: '1px solid var(--border-color)', borderRadius: '8px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <div>
+                        <div style={{ fontWeight: 'bold', fontSize: '1.1rem' }}>{hc.name}</div>
+                        <div style={{ color: 'var(--text-secondary)' }}>{qty} items - {tot.toLocaleString()} FRW</div>
+                      </div>
+                      <button className="btn-primary" onClick={() => restoreCart(hc)}>Resume</button>
+                    </div>
+                  );
+                })
+              )}
+            </div>
+          </div>
+
+          {/* Closed Orders */}
+          <div style={{ background: '#fff', padding: '20px', borderRadius: '12px', boxShadow: '0 4px 12px rgba(0,0,0,0.05)' }}>
+            <h2 style={{ borderBottom: '2px solid var(--border-color)', paddingBottom: '10px' }}>Your Closed Sales (Today)</h2>
+            <div style={{ marginTop: '15px', display: 'flex', flexDirection: 'column', gap: '10px', maxHeight: '400px', overflowY: 'auto' }}>
+              {myClosedOrders.length === 0 ? (
+                <div style={{ color: 'var(--text-secondary)' }}>No closed sales yet today.</div>
+              ) : (
+                myClosedOrders.map(sale => (
+                  <div key={sale.id} style={{ padding: '15px', border: '1px solid var(--border-color)', borderRadius: '8px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <div>
+                      <div style={{ fontWeight: 'bold', fontSize: '1.1rem' }}>{sale.productName} (x{sale.quantity})</div>
+                      <div style={{ color: 'var(--text-secondary)' }}>
+                        {new Date(sale.createdAt).toLocaleTimeString()} 
+                        {sale.customerName ? ` - ${sale.customerName}` : ''}
+                      </div>
+                    </div>
+                    <div style={{ fontWeight: 'bold', color: 'var(--primary)' }}>
+                      {sale.totalPrice.toLocaleString()} FRW
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="pos-container">
+      
+      {/* Left Panel: Product Selection */}
+      <div className="pos-panel pos-products-panel">
+        <div className="pos-search-bar">
+          <input 
+            type="text" 
+            placeholder="Search products..." 
+            value={search} 
+            onChange={e => setSearch(e.target.value)} 
+            className="pos-search-input"
+          />
+          <select value={filterCategory} onChange={e => setFilterCategory(e.target.value)} className="pos-search-input" style={{ flex: '0 0 200px' }}>
+            <option value="">All Categories</option>
+            {categories.map(c => <option key={c} value={c}>{c}</option>)}
+          </select>
+        </div>
+
+        <div className="pos-product-grid">
+          {filteredProducts.map(p => {
+            const isOutOfStock = p.stockQuantity <= 0;
+            const isLowStock = p.stockQuantity > 0 && p.stockQuantity <= 5;
+            
+            // Assign a subtle gradient tint based on category hash for visual grouping
+            const catHash = p.category ? p.category.charCodeAt(0) % 5 : 0;
+            const cardBg = isOutOfStock ? 'var(--bg-secondary)' : `var(--pos-cat-${catHash})`;
+
+            return (
+              <div 
+                key={p.id} 
+                onClick={() => { if (!isOutOfStock) addToCart(p, null); }}
+                className={`pos-product-card ${isOutOfStock ? 'out-of-stock' : ''}`}
+                style={{ background: cardBg }}
+              >
+                {isLowStock && <div style={{ position: 'absolute', top: '-8px', right: '-8px', background: '#ff9800', color: '#fff', fontSize: '0.7rem', padding: '2px 6px', borderRadius: '10px', fontWeight: 'bold', boxShadow: '0 2px 4px rgba(0,0,0,0.2)', zIndex: 10 }}>LOW STOCK</div>}
+                
+                <div>
+                  <div style={{ display: 'inline-block', padding: '2px 6px', background: 'var(--pos-cat-tag-bg)', borderRadius: '4px', fontSize: '0.65rem', fontWeight: 'bold', textTransform: 'uppercase', color: 'var(--pos-cat-tag-text)', marginBottom: '4px', maxWidth: '100%', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                    {p.category || 'Item'}
+                  </div>
+                  <div className="pos-product-title" style={{ color: 'var(--pos-card-title)' }}>{p.productName}</div>
+                </div>
+                
+                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', marginTop: '6px' }}>
+                  <div style={{ fontSize: '0.7rem', color: isLowStock ? '#ff9800' : 'var(--text-secondary)', fontWeight: isLowStock ? 'bold' : 'normal', marginBottom: '2px' }}>
+                    Stock: {p.stockQuantity || 0}
+                  </div>
+                  <div className="pos-product-price" style={{ whiteSpace: 'nowrap' }}>{p.unitPrice.toLocaleString()} FRW</div>
+                </div>
+              </div>
+            );
+          })}
+          {filteredProducts.length === 0 && (
+            <div style={{ gridColumn: '1 / -1', textAlign: 'center', color: 'var(--text-secondary)', padding: '40px', fontSize: '1.2rem' }}>No products found.</div>
+          )}
+        </div>
+      </div>
+
+      {/* Right Panel: Cart */}
+      <div className="pos-panel pos-cart-panel">
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', margin: '0 0 20px 0' }}>
+          <h2 style={{ margin: 0, fontSize: '1.5rem' }}>{activeOrderId ? `Table: ${activeOrderName}` : 'New Order'}</h2>
+          <div style={{ display: 'flex', gap: '8px' }}>
+            <button className="btn-secondary btn-sm" onClick={() => setView('dashboard')} style={{ padding: '8px 12px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <ArrowLeft size={16} /> Home
+            </button>
+            <button className="btn-secondary btn-sm" onClick={handleHoldCart} disabled={cart.length === 0} style={{ padding: '8px 12px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+              {activeOrderId ? <><Save size={16} /> Update</> : <><PauseCircle size={16} /> Hold</>}
+            </button>
+          </div>
+        </div>
+        
+        <div className="pos-cart-list">
+          {cart.map(item => {
+            const dcAmt = calculateItemDiscount(item);
+            return (
+              <div key={item.productId} className="pos-cart-item">
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                  <div style={{ flex: 1, paddingRight: '10px' }}>
+                    <div style={{ fontWeight: '600', fontSize: '0.95rem', color: 'var(--text-primary)' }}>
+                      {item.productName}
+                    </div>
+                    <div style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', marginTop: '4px' }}>
+                      {item.unitPrice.toLocaleString()} FRW
+                      {dcAmt > 0 && <span style={{ color: 'var(--danger)', marginLeft: '5px', fontWeight: 'bold' }}>(-{dcAmt.toLocaleString()})</span>}
+                    </div>
+                  </div>
+                  
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                    <button onClick={() => updateQuantity(item.productId, -1)} className="pos-qty-btn">-</button>
+                    <span style={{ fontWeight: 'bold', width: '20px', textAlign: 'center', fontSize: '1.1rem' }}>{item.quantity}</span>
+                    <button onClick={() => updateQuantity(item.productId, 1)} className="pos-qty-btn plus">+</button>
+                  </div>
+                </div>
+                
+                {/* Compact Discount Input */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '10px', opacity: 0.8 }}>
+                  <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Disc:</span>
+                  <input 
+                    type="text" 
+                    placeholder="% or FRW" 
+                    value={item.discount} 
+                    onChange={e => updateDiscount(item.productId, e.target.value)} 
+                    style={{ padding: '4px 8px', fontSize: '0.8rem', borderRadius: '6px', border: '1px solid var(--border-color)', width: '80px', background: 'transparent' }} 
+                  />
+                </div>
+              </div>
+            );
+          })}
+          {cart.length === 0 ? (
+            <div style={{ textAlign: 'center', color: 'var(--text-secondary)', marginTop: '60px', fontSize: '1.1rem', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '10px' }}>
+              <ShoppingCart size={48} style={{ opacity: 0.3 }} />
+              Cart is empty
+            </div>
+          ) : null}
+        </div>
+
+        <div className="pos-checkout-area">
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', marginBottom: '20px' }}>
+            <select 
+              value={selectedCustomer} 
+              onChange={e => setSelectedCustomer(e.target.value)} 
+              className="pos-search-input"
+              style={{ padding: '10px 16px' }}
+            >
+              <option value="">Select Customer (Optional)</option>
+              {crmCustomers.map(c => <option key={c.id} value={c.id}>{c.name} ({c.points || 0} pts)</option>)}
+            </select>
+            <input 
+              type="text" 
+              placeholder="Notes (Optional)" 
+              value={notes} 
+              onChange={e => setNotes(e.target.value)} 
+              className="pos-search-input"
+              style={{ padding: '10px 16px' }} 
+            />
+            
+            {selectedCustomer && crmCustomers.find(c => c.id === selectedCustomer)?.points > 0 && (
+              <div style={{ display: 'flex', gap: '10px', alignItems: 'center', background: 'rgba(79, 70, 229, 0.05)', padding: '12px', borderRadius: '12px', border: '1px dashed var(--primary)' }}>
+                <span style={{ fontSize: '0.85rem', color: 'var(--primary)', flex: 1, fontWeight: '600' }}>
+                  Redeem Points (Max {crmCustomers.find(c => c.id === selectedCustomer).points})<br/>
+                  <small style={{ opacity: 0.8 }}>1 pt = 10 FRW off</small>
+                </span>
+                <input 
+                  type="number" 
+                  max={crmCustomers.find(c => c.id === selectedCustomer).points} 
+                  min="0" 
+                  value={redeemPoints} 
+                  onChange={e => setRedeemPoints(Math.min(parseInt(e.target.value) || 0, crmCustomers.find(c => c.id === selectedCustomer).points))} 
+                  style={{ padding: '8px', borderRadius: '8px', border: '1px solid var(--primary)', width: '80px', textAlign: 'center', fontWeight: 'bold' }} 
+                />
+              </div>
+            )}
+          </div>
+
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
+            <span style={{ fontSize: '1.25rem', fontWeight: '700', color: 'var(--text-secondary)' }}>Total</span>
+            <span className="pos-gradient-text">
+              {Math.max(0, totalAmount - (redeemPoints * 10)).toLocaleString()} FRW
+            </span>
+          </div>
+
+          <div style={{ display: 'flex', gap: '12px', marginBottom: '12px' }}>
+            <button 
+              className="btn-primary" 
+              style={{ flex: '1', padding: '16px', borderRadius: '16px', fontWeight: 'bold', display: 'flex', justifyContent: 'center', alignItems: 'center' }}
+              onClick={handleHoldCart}
+              disabled={cart.length === 0}
+            >
+              <ChefHat size={18} style={{ marginRight: '8px' }} /> 
+              {activeOrderId ? 'Update Kitchen' : 'Send to Kitchen'}
+            </button>
+          </div>
+
+          <div style={{ display: 'flex', gap: '12px' }}>
+            <button 
+              className="btn-secondary" 
+              style={{ flex: '0 0 120px', padding: '16px', borderRadius: '16px', fontWeight: 'bold', border: '2px solid var(--border-color)' }}
+              onClick={handlePrintBill}
+              disabled={cart.length === 0}
+            >
+              <Printer size={18} style={{ marginRight: '6px' }} /> Bill
+            </button>
+            <button 
+              className="pos-checkout-btn" 
+              style={{ flex: '1' }}
+              onClick={() => {
+                setPaymentDetails({ Cash: 0, Card: 0, Momo: 0 });
+                setShowPaymentModal(true);
+              }}
+              disabled={cart.length === 0}
+            >
+              Checkout
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {showHeldModal && (
+        <div className="modal-overlay">
+          <div className="modal-content" style={{ maxWidth: '600px' }}>
+            <h2>Open Orders / Tables</h2>
+            <div style={{ maxHeight: '400px', overflowY: 'auto', margin: '15px 0' }}>
+              {heldCarts.length === 0 ? (
+                <div style={{ color: 'var(--text-secondary)', textAlign: 'center', padding: '20px' }}>No open orders.</div>
+              ) : (
+                heldCarts.map(hc => {
+                  const items = JSON.parse(hc.cartData);
+                  const qty = items.reduce((sum, i) => sum + i.quantity, 0);
+                  const tot = items.reduce((sum, i) => sum + (i.quantity * i.unitPrice), 0);
+                  return (
+                    <div key={hc.id} style={{ padding: '15px', border: '1px solid var(--border-color)', borderRadius: '8px', marginBottom: '10px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <div>
+                        <div style={{ fontWeight: 'bold' }}>{hc.name}</div>
+                        <div style={{ fontSize: '0.85rem', color: 'var(--text-secondary)' }}>
+                          Waiter: {hc.waiterName || 'Unknown'} | {qty} items - {tot.toLocaleString()} FRW
+                          <br/>Updated: {new Date(hc.updatedAt || hc.createdAt).toLocaleTimeString()}
+                        </div>
+                      </div>
+                      <div style={{ display: 'flex', gap: '8px' }}>
+                        <button className="btn-primary btn-sm" onClick={() => restoreCart(hc)}>Resume</button>
+                        <button className="btn-secondary btn-sm btn-danger" onClick={() => deleteHeldCart(hc.id)}>Delete</button>
+                      </div>
+                    </div>
+                  );
+                })
+              )}
+            </div>
+            <div style={{ textAlign: 'right' }}>
+              <button className="btn-secondary" onClick={() => setShowHeldModal(false)}>Close</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showPaymentModal && (
+        <div className="modal-overlay">
+          <div className="modal-content" style={{ maxWidth: '560px' }}>
+            <h2>Payment</h2>
+            <div style={{ fontSize: '1.5rem', fontWeight: 'bold', textAlign: 'center', margin: '16px 0' }}>
+              Total: {finalTotalAmount.toLocaleString()} FRW
+            </div>
+            
+            <div style={{ display: 'flex', gap: '8px', marginBottom: '16px' }}>
+              <button className="btn-secondary" style={{ flex: 1, padding: '10px', fontSize: '0.85rem', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px' }} onClick={() => { setPaymentDetails({ Cash: finalTotalAmount, Card: 0, Momo: 0 }); setPayActiveField('Cash'); }}>
+                <Banknote size={16} /> All Cash
+              </button>
+              <button className="btn-secondary" style={{ flex: 1, padding: '10px', fontSize: '0.85rem', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px' }} onClick={() => { setPaymentDetails({ Cash: 0, Card: 0, Momo: finalTotalAmount }); setPayActiveField('Momo'); }}>
+                <Smartphone size={16} /> All Momo
+              </button>
+              <button className="btn-secondary" style={{ flex: 1, padding: '10px', fontSize: '0.85rem', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px' }} onClick={() => { setPaymentDetails({ Cash: 0, Card: finalTotalAmount, Momo: 0 }); setPayActiveField('Card'); }}>
+                <CreditCard size={16} /> All Card
+              </button>
+            </div>
+
+            <div style={{ display: 'flex', gap: '16px', marginBottom: '16px' }}>
+              <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                {[{key:'Cash',label:'Cash (FRW)'},{key:'Card',label:'Card (FRW)'},{key:'Momo',label:'MoMo (FRW)'}].map(f => (
+                  <div key={f.key} onClick={() => setPayActiveField(f.key)} style={{ display:'flex', justifyContent:'space-between', alignItems:'center', padding:'10px 12px', borderRadius:'8px', cursor:'pointer', border: payActiveField === f.key ? '2px solid var(--primary)' : '1px solid var(--border-color)', background: payActiveField === f.key ? 'rgba(79,70,229,0.04)' : 'transparent', transition:'all 0.15s ease' }}>
+                    <label style={{ fontWeight:'600', fontSize:'0.9rem', color: payActiveField === f.key ? 'var(--primary)' : 'var(--text-primary)' }}>{f.label}</label>
+                    <input type="number" min="0" value={paymentDetails[f.key]} onChange={e => setPaymentDetails({...paymentDetails, [f.key]: e.target.value})} onFocus={() => setPayActiveField(f.key)} style={{ padding:'8px', borderRadius:'6px', border:'1px solid var(--border-color)', width:'120px', textAlign:'right', fontWeight:'bold', fontSize:'1.1rem' }} />
+                  </div>
+                ))}
+              </div>
+              <div style={{ width: '180px', flexShrink: 0 }}>
+                <div className="tender-presets" style={{ marginBottom: '8px' }}>
+                  <button className="tender-preset-btn" onClick={() => setPaymentDetails({...paymentDetails, [payActiveField]: finalTotalAmount})}>Exact</button>
+                  <button className="tender-preset-btn" onClick={() => setPaymentDetails({...paymentDetails, [payActiveField]: 5000})}>5K</button>
+                  <button className="tender-preset-btn" onClick={() => setPaymentDetails({...paymentDetails, [payActiveField]: 10000})}>10K</button>
+                  <button className="tender-preset-btn" onClick={() => setPaymentDetails({...paymentDetails, [payActiveField]: 20000})}>20K</button>
+                  <button className="tender-preset-btn" onClick={() => setPaymentDetails({...paymentDetails, [payActiveField]: 50000})}>50K</button>
+                </div>
+                <div className="numpad-grid">
+                  {['1','2','3','4','5','6','7','8','9','C','0','⌫'].map(key => (
+                    <button key={key} className={`numpad-btn ${key === 'C' ? 'numpad-clear' : ''}`} onClick={() => {
+                      const cur = String(paymentDetails[payActiveField] || '');
+                      let nv;
+                      if (key === 'C') nv = 0;
+                      else if (key === '⌫') nv = cur.length <= 1 ? 0 : Number(cur.slice(0,-1));
+                      else nv = Number(cur === '0' ? key : cur + key);
+                      setPaymentDetails({...paymentDetails, [payActiveField]: nv});
+                    }}>{key}</button>
+                  ))}
+                </div>
+              </div>
+            </div>
+
+            <div style={{ padding: '14px', background: changeDue >= 0 ? 'var(--success)' : 'var(--danger)', color: '#fff', borderRadius: '8px', marginBottom: '16px', display: 'flex', justifyContent: 'space-between', fontWeight: 'bold', fontSize: '1.05rem' }}>
+              <span>{changeDue >= 0 ? 'Change Due:' : 'Remaining Balance:'}</span>
+              <span>{Math.abs(changeDue).toLocaleString()} FRW</span>
+            </div>
+
+            <div style={{ display: 'flex', gap: '10px' }}>
+              <button className="btn-secondary" style={{ flex: 1, padding: '14px' }} onClick={() => setShowPaymentModal(false)}>Cancel</button>
+              <button className="btn-primary" style={{ flex: 1, padding: '14px' }} onClick={handleCheckout} disabled={totalPaid < finalTotalAmount}>Complete Sale</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showTableModal && (
+        <div className="modal-overlay">
+          <div className="modal-content" style={{ maxWidth: tables.length > 0 ? '800px' : '400px', width: '100%' }}>
+            <h2>Save Table / Order</h2>
+            
+            {tables.length > 0 ? (
+              <div style={{ maxHeight: '60vh', overflowY: 'auto', marginBottom: '20px' }}>
+                {Object.entries(
+                  tables.reduce((acc, table) => {
+                    if (!acc[table.zone]) acc[table.zone] = [];
+                    acc[table.zone].push(table);
+                    return acc;
+                  }, {})
+                ).map(([zone, zoneTables]) => (
+                  <div key={zone} style={{ marginBottom: '20px' }}>
+                    <h3 style={{ borderBottom: '1px solid var(--border-color)', paddingBottom: '8px', marginBottom: '15px' }}>{zone}</h3>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(120px, 1fr))', gap: '15px' }}>
+                      {zoneTables.map(t => {
+                        const occupied = heldCarts.find(c => c.name === t.name);
+                        return (
+                          <div 
+                            key={t.id}
+                            onClick={() => {
+                              setTableNameInput(t.name);
+                              // Can't await inside onClick easily without async, so we'll just set it and trigger save via a small trick or just require them to click Save.
+                              // Actually, if we just call confirmSaveTable directly but we need state to update first.
+                            }}
+                            onDoubleClick={async () => {
+                              // If they double click, auto save
+                              setTableNameInput(t.name);
+                              setTimeout(confirmSaveTable, 50);
+                            }}
+                            style={{
+                              padding: '15px',
+                              borderRadius: '8px',
+                              border: tableNameInput === t.name ? '3px solid var(--primary)' : '1px solid var(--border-color)',
+                              backgroundColor: occupied ? 'var(--danger-hover)' : 'var(--card-bg)',
+                              color: occupied ? 'var(--danger)' : 'var(--text-primary)',
+                              cursor: 'pointer',
+                              textAlign: 'center',
+                              boxShadow: tableNameInput === t.name ? '0 0 0 2px rgba(99,102,241,0.2)' : 'none'
+                            }}
+                          >
+                            <div style={{ fontWeight: 'bold', fontSize: '1.1rem', marginBottom: '8px' }}>{t.name}</div>
+                            <div style={{ fontSize: '0.8rem', color: occupied ? 'var(--danger)' : 'var(--text-secondary)' }}>
+                              {occupied ? `Occupied by ${occupied.waiterName || 'Unknown'}` : `${t.seats} Seats`}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p style={{ color: 'var(--text-secondary)', marginBottom: '20px' }}>Enter a name to identify this table or customer.</p>
+            )}
+
+            <input 
+              type="text" 
+              value={tableNameInput} 
+              onChange={e => setTableNameInput(e.target.value)} 
+              placeholder="Selected table or enter custom name..." 
+              autoFocus
+              onKeyDown={e => { if (e.key === 'Enter') confirmSaveTable(); }}
+              style={{ width: '100%', padding: '12px', borderRadius: '8px', border: '1px solid var(--border-color)', marginBottom: '20px', fontSize: '1.1rem' }} 
+            />
+            <div style={{ display: 'flex', gap: '10px' }}>
+              <button className="btn-secondary" style={{ flex: 1 }} onClick={() => setShowTableModal(false)}>Cancel</button>
+              <button className="btn-primary" style={{ flex: 1 }} onClick={confirmSaveTable}>Save Order</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+    </div>
+  );
+}
