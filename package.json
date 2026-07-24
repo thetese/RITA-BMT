@@ -7,7 +7,7 @@
     "dev": "vite",
     "build": "vite build",
     "test": "electron-mocha test/**/*.test.js",
-    "electron:dev": "concurrently \"tsc -p tsconfig.node.json -w\" \"vite\" \"wait-on http://localhost:5173 && wait-on dist-electron/main.js && electron . --dev\"",
+    "electron:dev": "concurrently \"tsc -p tsconfig.node.json -w\" \"vite\" \"wait-on http://127.0.0.1:5173 && wait-on dist-electron/main.js && electron . --dev\"",
     "electron:build": "tsc -p tsconfig.node.json && vite build && electron-builder",
     "dev:restaurant": "cross-env VITE_APP_TYPE=restaurant npm run electron:dev",
     "dev:retail": "cross-env VITE_APP_TYPE=retail npm run electron:dev",
