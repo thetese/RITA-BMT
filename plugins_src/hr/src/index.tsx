@@ -1,24 +1,8 @@
-const React = (window as any).React;
-const PluginApp = ({ api, onClose }) => {
-  return (
-    <div style={{ padding: '20px', height: '100%', background: '#fff', display: 'flex', flexDirection: 'column' }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <h1 style={{ color: '#1e3a8a' }}>People & HR (Plugin)</h1>
-        <button onClick={onClose} style={{ background: '#e2e8f0', border: 'none', padding: '10px 20px', borderRadius: '5px', cursor: 'pointer' }}>Close Plugin</button>
-      </div>
-      <p style={{ marginTop: '20px' }}>This module was dynamically loaded from the plugins directory.</p>
-    </div>
-  );
-};
-(window as any).RitaPlugin = {
-  mount: (container, props) => {
-    const ReactDOM = (window as any).ReactDOM;
-    const root = ReactDOM.createRoot(container);
-    root.render(React.createElement(PluginApp, props));
-    (window as any).RitaPlugin._root = root;
-  },
-  unmount: () => {
-    const root = (window as any).RitaPlugin._root;
-    if (root) root.unmount();
-  }
-};
+import './index.css';
+const React=(window as any).React;const{useEffect,useMemo,useState}=React;
+const money=(n:any)=>new Intl.NumberFormat(undefined,{maximumFractionDigits:0}).format(Number(n||0));
+const HR=({api,onClose}:any)=>{const[tab,setTab]=useState('overview');const[users,setUsers]=useState<any[]>([]);const[cards,setCards]=useState<any[]>([]);const[loading,setLoading]=useState(true);const[q,setQ]=useState('');
+const load=async()=>{setLoading(true);try{const[u,t]=await Promise.all([api.getUsers?.()||[],api.getTimecards?.()||[]]);setUsers(u||[]);setCards(t||[])}finally{setLoading(false)}};useEffect(()=>{load()},[]);
+const active=useMemo(()=>cards.filter((x:any)=>!x.clockOut&&!x.clock_out),[cards]);const payroll=useMemo(()=>cards.reduce((s:any,x:any)=>s+Number(x.pay||x.amount||0),0),[cards]);const filtered=users.filter((u:any)=>`${u.name||''} ${u.username||''} ${u.role||''}`.toLowerCase().includes(q.toLowerCase()));
+const tabs=[['overview','Overview'],['people','People'],['attendance','Attendance'],['payroll','Payroll'],['performance','Performance'],['reports','Reports']];return <div className="rita-module"><div className="rita-shell"><div className="rita-header"><div><h1 className="rita-title">People & HR Management</h1><div className="rita-sub">Workforce, attendance, compensation and performance in one RITA workspace.</div></div><div style={{display:'flex',gap:10}}><button className="rita-btn secondary" onClick={load}>Refresh</button><button className="rita-btn secondary" onClick={onClose}>Close Module</button></div></div><div className="rita-tabs">{tabs.map((t:any)=><div key={t[0]} className={`rita-tab ${tab===t[0]?'active':''}`} onClick={()=>setTab(t[0])}>{t[1]}</div>)}</div>{loading?<div className="rita-empty">Loading workforce data…</div>:<>{tab==='overview'&&<><div className="rita-grid"><div className="rita-card"><div className="rita-kpi-label">Team members</div><div className="rita-kpi">{users.length}</div></div><div className="rita-card"><div className="rita-kpi-label">Clocked in</div><div className="rita-kpi">{active.length}</div></div><div className="rita-card"><div className="rita-kpi-label">Time entries</div><div className="rita-kpi">{cards.length}</div></div><div className="rita-card"><div className="rita-kpi-label">Recorded payroll</div><div className="rita-kpi">{money(payroll)}</div></div></div><div className="rita-card rita-section"><h3>Workforce command center</h3><div className="rita-table-wrap"><table className="rita-table"><thead><tr><th>Employee</th><th>Role</th><th>Status</th></tr></thead><tbody>{users.slice(0,8).map((u:any)=><tr key={u.id}><td>{u.name||u.username||'Employee'}</td><td>{u.role||'Staff'}</td><td><span className="rita-badge">Active</span></td></tr>)}</tbody></table></div></div></>}{tab==='people'&&<div className="rita-card"><div className="rita-toolbar"><h3>Employee Directory</h3><input className="rita-search" placeholder="Search people…" value={q} onChange={(e:any)=>setQ(e.target.value)}/></div><div className="rita-table-wrap"><table className="rita-table"><thead><tr><th>Name</th><th>Username</th><th>Role</th><th>Hourly rate</th><th>Commission</th></tr></thead><tbody>{filtered.map((u:any)=><tr key={u.id}><td>{u.name||'-'}</td><td>{u.username||'-'}</td><td>{u.role||'-'}</td><td>{u.hourlyRate??u.hourly_rate??'-'}</td><td>{u.commissionRate??u.commission_rate??'-'}</td></tr>)}</tbody></table></div></div>}{tab==='attendance'&&<div className="rita-card"><h3>Attendance & Timecards</h3><div className="rita-table-wrap"><table className="rita-table"><thead><tr><th>Employee</th><th>Clock in</th><th>Clock out</th><th>Status</th></tr></thead><tbody>{cards.map((x:any)=><tr key={x.id}><td>{x.userName||x.username||x.userId||'-'}</td><td>{x.clockIn||x.clock_in||'-'}</td><td>{x.clockOut||x.clock_out||'-'}</td><td><span className="rita-badge">{x.clockOut||x.clock_out?'Completed':'On shift'}</span></td></tr>)}</tbody></table></div></div>}{tab==='payroll'&&<div className="rita-card"><h3>Payroll Workspace</h3><p className="rita-sub">Compensation data is sourced from employee rates and recorded timecards. Edit rates from the employee profile in core RITA.</p><div className="rita-grid"><div className="rita-card"><div className="rita-kpi-label">Employees</div><div className="rita-kpi">{users.length}</div></div><div className="rita-card"><div className="rita-kpi-label">Payroll records</div><div className="rita-kpi">{cards.length}</div></div></div></div>}{tab==='performance'&&<div className="rita-card"><h3>Performance</h3><p className="rita-sub">Use attendance consistency, sales attribution and commission data to evaluate staff performance without leaving RITA.</p></div>}{tab==='reports'&&<div className="rita-card"><h3>HR Reports</h3><p className="rita-sub">Workforce headcount, attendance and payroll data are ready for export/reporting from the RITA reporting layer.</p></div>}</>}</div></div>};
+(window as any).RitaPlugin={mount:(c:any,p:any)=>{const r=(window as any).ReactDOM.createRoot(c);r.render(React.createElement(HR,p));(window as any).RitaPlugin._root=r},unmount:()=>{(window as any).RitaPlugin._root?.unmount()}};
